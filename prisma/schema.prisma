@@ -1,0 +1,1183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  MASTER: 遺??(怨꾩링 援ъ“)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model Department {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  name       String
+  parent_id  String?
+  module_id  String?
+  is_active  Boolean   @default(true)
+  deleted_at DateTime?
+
+  parent   Department?  @relation("DeptTree", fields: [parent_id], references: [id])
+  children Department[] @relation("DeptTree")
+
+  users               User[]
+  patient_stats       PatientStat[]
+  patients            Patient[]
+  ward_requests       WardRequest[]
+  stock_outs          StockOut[]
+  stock_out_followups StockOutFollowUp[]
+  inventory_locations InventoryLocation[]
+  cost_statistics     CostStatistic[]
+  category_perms      DeptCategoryPermission[]
+  item_perms          DeptItemPermission[]
+  ward_rooms          WardRoom[]
+  ward_room_boards    WardRoomBoard[]
+  patient_events      PatientEvent[]
+  dept_calendar_events DeptCalendarEvent[]
+  equipment_units      EquipmentUnit[]
+  equipment_repairs    EquipmentRepair[]
+
+  @@index([parent_id])
+  @@index([is_active])
+  @@map("departments")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  AUTH & RBAC
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model User {
+  id            String    @id @default(uuid())
+  username      String    @unique
+  password_hash String
+  display_name  String    @default("")
+  department_id String?
+  is_active      Boolean   @default(true)
+  last_login_at  DateTime?
+  last_logout_at DateTime? // 서버사이드 로그아웃 무효화: 이 시각 이전 발급 토큰은 authMiddleware에서 거부
+  deleted_at        DateTime?
+  menu_permissions   String?   // JSON string[] of allowed menu keys. null = default role-based visibility
+  direct_permissions String?   // JSON string[] of permission keys directly assigned to user
+
+  department Department? @relation(fields: [department_id], references: [id])
+
+  user_roles       UserRole[]
+  ward_requests    WardRequest[]
+  approval_actions ApprovalAction[]
+  purchase_orders  PurchaseOrder[]
+  goods_receipts   GoodsReceipt[]
+  confirmed_goods_receipts GoodsReceipt[] @relation("GoodsReceiptConfirmer")
+  confirmed_stock_in_items StockInItem[]  @relation("StockInItemConfirmer")
+  resolved_followups       PendingReceiptFollowUp[] @relation("PendingReceiptFollowUpResolver")
+  created_stock_out_followups StockOutFollowUp[] @relation("StockOutFollowUpCreator")
+  resolved_stock_out_followups StockOutFollowUp[] @relation("StockOutFollowUpResolver")
+  stock_outs       StockOut[]
+  audit_logs       AuditLog[]
+  usage_baselines  UsageBaseline[]
+  patients         Patient[]
+  patient_events   PatientEvent[]
+  dept_calendar_events DeptCalendarEvent[]
+
+  @@index([department_id])
+  @@index([is_active])
+  @@map("users")
+}
+
+model Role {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String    @default("")
+  deleted_at  DateTime?
+
+  role_permissions RolePermission[]
+  user_roles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid())
+  key         String @unique
+  description String @default("")
+
+  role_permissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  role_id       String
+  permission_id String
+
+  role       Role       @relation(fields: [role_id], references: [id])
+  permission Permission @relation(fields: [permission_id], references: [id])
+
+  @@id([role_id, permission_id])
+  @@index([permission_id])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  user_id String
+  role_id String
+
+  user User @relation(fields: [user_id], references: [id])
+  role Role @relation(fields: [role_id], references: [id])
+
+  @@id([user_id, role_id])
+  @@index([role_id])
+  @@map("user_roles")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  MASTER: ?낆껜
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model Vendor {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  name           String
+  phone          String    @default("")
+  email          String    @default("")
+  lead_time_days Int       @default(3)
+  is_active      Boolean   @default(true)
+  deleted_at     DateTime?
+
+  item_defaults   Item[]          @relation("ItemDefaultVendor")
+  vendor_maps     ItemVendorMap[]
+  price_history   PriceHistory[]
+  purchase_orders PurchaseOrder[]
+  pending_receipt_followups PendingReceiptFollowUp[]
+  inventory_lots  InventoryLot[]
+
+  @@map("vendors")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  MASTER: ?덈ぉ
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model Item {
+  id                     String    @id @default(uuid())
+  item_code              String    @unique
+  name                   String
+  category               String    @default("MEDICAL_FIXED")  // MEDICAL_FIXED | MEDICAL_ACT | GENERAL_PATIENT | GENERAL_STAFF | GENERAL_MGMT | OFFICE_SUPPLY | OFFICE_SEMI | EQUIP_MEDICAL | EQUIP_AID | EQUIP_FURNITURE | EQUIP_APPLIANCE | EQUIP_IT | EQUIP_SAFETY
+  stats_bucket           String    @default("MEDICAL") // MEDICAL | GENERAL | OFFICE | DIAPER_CARE | FOOD
+  expense_scope          String    @default("PATIENT_DIRECT") // PATIENT_DIRECT | OPS_INDIRECT
+  uom                    String    @default("EA")
+  pack_size              Int       @default(1)
+  default_vendor_id      String?
+  min_order_qty          Int       @default(1)
+  is_regular_order       Boolean   @default(true)
+  reorder_days_threshold Int       @default(7)
+  is_active              Boolean   @default(true)
+  deleted_at             DateTime?
+  image_url              String?
+
+  default_vendor        Vendor?              @relation("ItemDefaultVendor", fields: [default_vendor_id], references: [id])
+  vendor_maps           ItemVendorMap[]
+  price_history         PriceHistory[]
+  ward_request_items    WardRequestItem[]
+  approval_action_items ApprovalActionItem[]
+  purchase_order_items  PurchaseOrderItem[]
+  stock_in_items        StockInItem[]
+  stock_out_items       StockOutItem[]
+  inventory             Inventory[]
+  pending_receipt_followups PendingReceiptFollowUp[]
+  stock_out_followups      StockOutFollowUp[]
+  inventory_lots        InventoryLot[]
+  usage_baselines       UsageBaseline[]
+  cost_statistics       CostStatistic[]
+  dept_item_permissions DeptItemPermission[]
+  equipment_units       EquipmentUnit[]
+  treatment_supply_maps TreatmentSupplyMap[]
+
+  @@index([category])
+  @@index([stats_bucket])
+  @@index([expense_scope])
+  @@index([default_vendor_id])
+  @@index([is_regular_order])
+  @@map("items")
+}
+
+model ItemVendorMap {
+  id        String  @id @default(uuid())
+  item_id   String
+  vendor_id String
+  priority  Int     @default(1)
+  is_active Boolean @default(true)
+
+  item   Item   @relation(fields: [item_id], references: [id])
+  vendor Vendor @relation(fields: [vendor_id], references: [id])
+
+  @@unique([item_id, vendor_id])
+  @@map("item_vendor_map")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  媛寃??대젰
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model PriceHistory {
+  id             String    @id @default(uuid())
+  item_id        String
+  vendor_id      String
+  price          Decimal
+  currency       String    @default("KRW")
+  effective_from DateTime
+  effective_to   DateTime?
+  source         String    @default("MANUAL")  // PO | MANUAL | CONTRACT
+  created_at     DateTime  @default(now())
+
+  item   Item   @relation(fields: [item_id], references: [id])
+  vendor Vendor @relation(fields: [vendor_id], references: [id])
+
+  @@unique([item_id, vendor_id, effective_from])
+  @@index([item_id, vendor_id])
+  @@map("price_history")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?섏옄 ?듦퀎 (湲곌컙蹂?
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model PatientStat {
+  id                  String    @id @default(uuid())
+  department_id       String
+  period_type         String    // DAY | WEEK | MONTH
+  period_start        DateTime
+  period_end          DateTime
+  patient_count       Int
+  created_at          DateTime  @default(now())
+  deleted_at          DateTime?
+
+  department Department @relation(fields: [department_id], references: [id])
+
+  @@unique([department_id, period_type, period_start])
+  @@index([department_id, period_start])
+  @@map("patient_stats")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?섏옄 愿由?(媛쒕퀎 ?낇눜??
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model Patient {
+  id                        String    @id @default(uuid())
+  patient_no                String    @default("")
+  chart_no                  String    @default("")
+  name                      String    @default("")
+  department_id             String
+  room_no                   String    @default("")
+  bed_no                    Int?
+  gender                    String    @default("UNKNOWN") // F | M | UNKNOWN
+  mobility_type             String    @default("AMBULATORY") // BEDRIDDEN | AMBULATORY
+  insurance_type            String    @default("HEALTH") // HEALTH | MEDICAL_1 | MEDICAL_2 | WORKERS_COMP | AUTO_INS
+  patient_group             String    @default("UNRATED") // HIGHEST | HIGH | MEDIUM | LOW | SELECT | UNRATED
+  specializations           String    @default("[]") // JSON string: INFECT | DIALYSIS | REHAB
+  infection_strain          String    @default("") // CRE | VRE | MR | ''
+  period_type               String    @default("") // PNEUMONIA | SEPSIS | ''
+  period_phase              String    @default("") // START | END | ''
+  diaper_state              String    @default("") // CIRCLE | TRIANGLE | ''
+  diaper_price              Float?
+  diaper_start_date         DateTime?
+  diaper_end_date           DateTime?
+  prev_hospital             String    @default("")
+  acquaintance              String    @default("")
+  acquaintance_color        String    @default("")
+  deceased_at               DateTime?
+  admitted_at               DateTime  @default(now())
+  discharged_at             DateTime?
+  status                    String    @default("ADMITTED") // ADMITTED | DISCHARGED | DECEASED
+  note                      String    @default("")
+  created_by                String
+  created_at                DateTime  @default(now())
+  deleted_at                DateTime?
+  disease_code_id           String?   // active V code id
+  disease_code_registered_at DateTime?
+  disease_code_expires_at   DateTime?
+  main_disease_code_id      String?
+  caregiver_type            String    @default("") // CLOSE | OUTSOURCED | IN_HOUSE
+  guardian_name             String    @default("")
+  billing_sms_phone         String    @default("")
+  project_name              String    @default("")
+  project_region            String    @default("")
+  project_sigungu_office    String    @default("")
+  address                   String    @default("")
+  referral_source           String    @default("")
+  discharge_type            String    @default("")
+
+  department            Department         @relation(fields: [department_id], references: [id])
+  creator               User               @relation(fields: [created_by], references: [id])
+  room_boards           WardRoomBoard[]
+  events                PatientEvent[]
+  patient_disease_codes PatientDiseaseCode[]
+  patient_treatments    PatientTreatment[]
+
+  @@index([department_id, status])
+  @@index([department_id, room_no, bed_no])
+  @@index([admitted_at])
+  @@map("patients")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  V肄붾뱶 (?곗젙?밸?肄붾뱶) 留덉뒪??// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model DiseaseCode {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  code_type  String   // MAIN | SEVERE | RARE
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  deleted_at DateTime?
+
+  patient_disease_codes PatientDiseaseCode[]
+
+  @@index([code_type, is_active])
+  @@map("disease_codes")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?섏옄蹂?V肄붾뱶 ?깅줉 ?대젰
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model PatientDiseaseCode {
+  id              String    @id @default(uuid())
+  patient_id      String
+  disease_code_id String
+  registered_at   DateTime
+  expires_at      DateTime?
+  note            String    @default("")
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now())
+  deleted_at      DateTime?
+
+  patient      Patient     @relation(fields: [patient_id], references: [id])
+  disease_code DiseaseCode @relation(fields: [disease_code_id], references: [id])
+
+  @@index([patient_id])
+  @@index([disease_code_id])
+  @@map("patient_disease_codes")
+}
+
+model WardRoom {
+  id            String   @id @default(uuid())
+  department_id String
+  room_no       String
+  capacity      Int      @default(6)
+  sort_order    Int      @default(0)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  deleted_at    DateTime?
+
+  department Department      @relation(fields: [department_id], references: [id])
+  boards     WardRoomBoard[]
+
+  @@unique([department_id, room_no])
+  @@index([department_id, is_active])
+  @@map("ward_rooms")
+}
+
+model WardRoomBoard {
+  id                     String   @id @default(uuid())
+  board_date             DateTime
+  department_id          String
+  ward_room_id           String
+  room_no                String
+  bed_no                 Int
+  patient_id             String?
+  patient_no             String   @default("")
+  chart_no               String   @default("")
+  patient_name           String   @default("")
+  gender                 String   @default("UNKNOWN")
+  mobility_type          String   @default("AMBULATORY")
+  insurance_type         String   @default("HEALTH")
+  specializations        String   @default("[]")
+  infection_strain       String   @default("")
+  period_type            String   @default("")
+  period_phase           String   @default("")
+  patient_group          String   @default("UNRATED")
+  diaper_state           String   @default("")
+  diaper_price           Float?
+  diaper_start_date      DateTime?
+  diaper_end_date        DateTime?
+  prev_hospital          String   @default("")
+  acquaintance           String   @default("")
+  acquaintance_color     String   @default("")
+  status                 String   @default("ADMITTED") // ADMITTED | DISCHARGED | DECEASED
+  is_manual              Boolean  @default(false)
+  note                   String   @default("")
+  main_disease_code_id   String?
+  caregiver_type         String   @default("") // CLOSE | OUTSOURCED | IN_HOUSE
+  guardian_name          String   @default("")
+  billing_sms_phone      String   @default("")
+  project_name           String   @default("")
+  project_region         String   @default("")
+  project_sigungu_office String   @default("")
+  address                String   @default("")
+  referral_source        String   @default("")
+  discharge_type         String   @default("")
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+  deleted_at             DateTime?
+
+  department Department @relation(fields: [department_id], references: [id])
+  ward_room  WardRoom   @relation(fields: [ward_room_id], references: [id])
+  patient    Patient?   @relation(fields: [patient_id], references: [id])
+
+  @@unique([board_date, department_id, ward_room_id, bed_no])
+  @@index([department_id, board_date])
+  @@index([patient_id, board_date])
+  @@map("ward_room_boards")
+}
+
+model PatientEvent {
+  id            String   @id @default(uuid())
+  patient_id    String
+  department_id String
+  event_type    String // ADMISSION | DISCHARGE | DEATH | TRANSFER
+  event_date    DateTime
+  room_no       String   @default("")
+  bed_no        Int?
+  prev_hospital String   @default("")
+  memo          String   @default("")
+  created_by    String
+  created_at    DateTime @default(now())
+  deleted_at    DateTime?
+
+  patient    Patient    @relation(fields: [patient_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+  creator    User       @relation(fields: [created_by], references: [id])
+
+  @@index([department_id, event_date, event_type])
+  @@index([patient_id, event_date])
+  @@map("patient_events")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?ъ슜 湲곗? (踰꾩쟾/?좏슚湲곌컙 愿由?
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model UsageBaseline {
+  id               String    @id @default(uuid())
+  item_id          String
+  department_scope String    @default("ALL")  // ALL | 遺?쏧D
+  period_type      String    @default("MONTH")  // MONTH | WEEK
+  qty_per_patient  Decimal
+  version          Int       @default(1)
+  effective_from   DateTime
+  effective_to     DateTime?
+  created_by       String
+  created_at       DateTime  @default(now())
+  deleted_at       DateTime?
+
+  item    Item @relation(fields: [item_id], references: [id])
+  creator User @relation(fields: [created_by], references: [id])
+
+  @@unique([item_id, department_scope, period_type, version])
+  @@index([item_id, department_scope])
+  @@map("usage_baselines")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  蹂묐룞 ?좎껌
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model WardRequest {
+  id            String    @id @default(uuid())
+  request_no    String    @unique
+  department_id String
+  requester_id  String
+  period_type   String    @default("MONTH")
+  period_start  DateTime
+  period_end    DateTime
+  status        String    @default("DRAFT")
+  // DRAFT | SUBMITTED | APPROVED | PARTIAL_APPROVED | REJECTED | CANCELLED
+  request_type           String    @default("CONSUMABLE_REGULAR")  // CONSUMABLE_REGULAR | DIAPER | NIGHT_SNACK | ADHOC | EQUIPMENT
+  is_emergency           Boolean   @default(false)
+  equipment_request_type String?          // 비품신청 전용: DISPOSAL | ADDITION | REPAIR
+  note                   String?          // 비품신청 사유 등
+  attachment_urls        String  @default("[]")  // JSON: ["/uploads/equipment-attachments/xxx.jpg", ...]
+  equipment_unit_ids     String  @default("[]")  // JSON: 폐기/수리 대상 EquipmentUnit ID 배열
+  source_repair_id       String?                 // 수리불가 폐기 시 원본 EquipmentRepair ID
+  submitted_at           DateTime?
+  deleted_at             DateTime?
+
+  department Department @relation(fields: [department_id], references: [id])
+  requester  User       @relation(fields: [requester_id], references: [id])
+
+  items            WardRequestItem[]
+  approval_actions ApprovalAction[]
+  stock_outs       StockOut[]
+  po_sources       PurchaseOrderSource[]
+
+  @@index([department_id, submitted_at])
+  @@index([status])
+  @@index([is_emergency])
+  @@map("ward_requests")
+}
+
+model WardRequestItem {
+  id              String  @id @default(uuid())
+  ward_request_id String
+  item_id         String?                     // null = 자유 입력 품목
+  custom_name     String  @default("")        // 자유 입력 품목명
+  custom_spec     String  @default("")        // 자유 입력 규격/단위
+  custom_link     String  @default("")        // 자유 입력 참고 링크(URL)
+  requested_qty   Decimal
+  baseline_qty    Decimal @default(0)
+  diff_pct        Decimal @default(0)
+  policy_flags    String  @default("[]")  // JSON array
+  note            String  @default("")
+
+  ward_request WardRequest @relation(fields: [ward_request_id], references: [id])
+  item         Item?       @relation(fields: [item_id], references: [id])
+
+  @@index([ward_request_id])
+  @@index([item_id])
+  @@map("ward_request_items")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?뱀씤 / 議곗젙
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model ApprovalAction {
+  id              String   @id @default(uuid())
+  ward_request_id String
+  approver_id     String
+  action          String   // APPROVE | ADJUST | REJECT
+  reason          String
+  created_at      DateTime @default(now())
+
+  ward_request WardRequest          @relation(fields: [ward_request_id], references: [id])
+  approver     User                 @relation(fields: [approver_id], references: [id])
+  items        ApprovalActionItem[]
+
+  @@index([ward_request_id, created_at])
+  @@index([approver_id, created_at])
+  @@map("approval_actions")
+}
+
+model ApprovalActionItem {
+  id                 String   @id @default(uuid())
+  approval_action_id String
+  item_id            String?                    // null = 자유 입력 품목
+  custom_name        String   @default("")      // 자유 입력 품목명
+  requested_qty      Decimal
+  approved_qty       Decimal
+  baseline_qty       Decimal  @default(0)
+  diff_qty           Decimal
+  diff_pct           Decimal
+  diff_amount        Decimal  @default(0)
+  policy_flags       String   @default("[]")  // JSON
+
+  approval_action ApprovalAction @relation(fields: [approval_action_id], references: [id])
+  item            Item?          @relation(fields: [item_id], references: [id])
+
+  @@index([approval_action_id])
+  @@index([item_id])
+  @@map("approval_action_items")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  諛쒖＜??(PO)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model PurchaseOrder {
+  id           String    @id @default(uuid())
+  po_no        String    @unique
+  vendor_id    String
+  created_by   String
+  status       String    @default("DRAFT")
+  // DRAFT | SENT | PARTIAL_RECEIVED | CLOSED | CANCELLED
+  ordered_at   DateTime  @default(now())
+  expected_at  DateTime?
+  pdf_path     String    @default("")
+  total_amount Decimal   @default(0)
+  note         String    @default("")
+  deleted_at   DateTime?
+
+  vendor   Vendor             @relation(fields: [vendor_id], references: [id])
+  creator  User               @relation(fields: [created_by], references: [id])
+  po_items PurchaseOrderItem[]
+  receipts GoodsReceipt[]
+  pending_receipt_followups PendingReceiptFollowUp[]
+  sources  PurchaseOrderSource[]
+
+  @@index([vendor_id, ordered_at])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id                String  @id @default(uuid())
+  purchase_order_id String
+  item_id           String
+  ordered_qty       Decimal
+  unit_price        Decimal
+  line_amount       Decimal
+
+  purchase_order PurchaseOrder @relation(fields: [purchase_order_id], references: [id])
+  item           Item          @relation(fields: [item_id], references: [id])
+
+  @@unique([purchase_order_id, item_id])
+  @@index([item_id])
+  @@map("purchase_order_items")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?낃퀬 (Goods Receipt)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model GoodsReceipt {
+  id                String    @id @default(uuid())
+  gr_no             String    @unique
+  purchase_order_id String?
+  received_by       String
+  received_at       DateTime  @default(now())
+  status            String    @default("PENDING")  // PENDING | CONFIRMED | DIFF_CONFIRMED | REVERSED
+  note              String    @default("")
+  confirmed_at      DateTime?
+  confirmed_by      String?
+  diff_count        Int       @default(0)
+  deleted_at        DateTime?
+
+  purchase_order PurchaseOrder? @relation(fields: [purchase_order_id], references: [id])
+  receiver       User           @relation(fields: [received_by], references: [id])
+  confirmer      User?          @relation("GoodsReceiptConfirmer", fields: [confirmed_by], references: [id])
+  stock_in_items StockInItem[]
+  inventory_lots InventoryLot[]
+  pending_followups PendingReceiptFollowUp[]
+
+  @@index([purchase_order_id, received_at])
+  @@index([received_at])
+  @@map("goods_receipts")
+}
+
+model StockInItem {
+  id               String  @id @default(uuid())
+  goods_receipt_id String
+  item_id          String
+  received_qty     Decimal
+  expected_qty     Decimal?
+  confirmed_qty    Decimal?
+  diff_qty         Decimal?
+  diff_note        String   @default("")
+  confirmed_at     DateTime?
+  confirmed_by     String?
+  unit_price       Decimal
+  location_id      String
+
+  goods_receipt GoodsReceipt      @relation(fields: [goods_receipt_id], references: [id])
+  item          Item              @relation(fields: [item_id], references: [id])
+  location      InventoryLocation @relation(fields: [location_id], references: [id])
+  confirmer     User?             @relation("StockInItemConfirmer", fields: [confirmed_by], references: [id])
+  lots          InventoryLot[]
+
+  @@unique([goods_receipt_id, item_id])
+  @@index([item_id])
+  @@map("stock_in_items")
+}
+
+model PendingReceiptFollowUp {
+  id                String   @id @default(uuid())
+  goods_receipt_id  String
+  purchase_order_id String?
+  vendor_id         String?
+  item_id           String
+  missing_qty       Decimal
+  status            String   @default("OPEN") // OPEN | RESOLVED | CANCELLED
+  note              String   @default("")
+  created_at        DateTime @default(now())
+  resolved_at       DateTime?
+  resolved_by       String?
+
+  goods_receipt  GoodsReceipt  @relation(fields: [goods_receipt_id], references: [id])
+  purchase_order PurchaseOrder? @relation(fields: [purchase_order_id], references: [id])
+  vendor         Vendor?       @relation(fields: [vendor_id], references: [id])
+  item           Item          @relation(fields: [item_id], references: [id])
+  resolver       User?         @relation("PendingReceiptFollowUpResolver", fields: [resolved_by], references: [id])
+
+  @@index([goods_receipt_id])
+  @@index([purchase_order_id])
+  @@index([vendor_id])
+  @@index([item_id])
+  @@index([status, created_at])
+  @@map("pending_receipt_followups")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  遺덉텧 (Stock Out)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model StockOut {
+  id              String    @id @default(uuid())
+  so_no           String    @unique
+  department_id   String
+  ward_request_id String?
+  issued_by       String
+  issued_at       DateTime  @default(now())
+  status          String    @default("RECEIPT_PENDING")  // RECEIPT_PENDING | RECEIPT_CONFIRMED | RECEIPT_DIFF | REVERSED
+  note            String    @default("")
+  receipt_confirmed_at DateTime?
+  receipt_confirmed_by String?
+  receipt_diff_count   Int      @default(0)
+  deleted_at      DateTime?
+
+  department   Department   @relation(fields: [department_id], references: [id])
+  ward_request WardRequest? @relation(fields: [ward_request_id], references: [id])
+  issuer       User         @relation(fields: [issued_by], references: [id])
+  items        StockOutItem[]
+  lot_allocations StockOutLotAllocation[]
+  follow_ups   StockOutFollowUp[]
+
+  @@index([department_id, issued_at])
+  @@index([ward_request_id])
+  @@map("stock_out")
+}
+
+model StockOutFollowUp {
+  id            String   @id @default(uuid())
+  stock_out_id  String
+  department_id String
+  item_id       String
+  action_type   String   // ISSUE_ADD | COLLECT_BACK
+  diff_qty      Decimal
+  status        String   @default("OPEN") // OPEN | RESOLVED | CANCELLED
+  note          String   @default("")
+  created_at    DateTime @default(now())
+  created_by    String
+  resolved_at   DateTime?
+  resolved_by   String?
+
+  stock_out   StockOut   @relation(fields: [stock_out_id], references: [id])
+  department  Department @relation(fields: [department_id], references: [id])
+  item        Item       @relation(fields: [item_id], references: [id])
+  creator     User       @relation("StockOutFollowUpCreator", fields: [created_by], references: [id])
+  resolver    User?      @relation("StockOutFollowUpResolver", fields: [resolved_by], references: [id])
+
+  @@index([status, created_at])
+  @@index([department_id, status])
+  @@index([stock_out_id])
+  @@index([item_id])
+  @@map("stock_out_followups")
+}
+
+model StockOutItem {
+  id           String  @id @default(uuid())
+  stock_out_id String
+  item_id      String
+  issued_qty   Decimal
+  location_id  String
+  received_qty         Decimal?
+  receipt_note         String   @default("")
+  receipt_confirmed_at DateTime?
+  receipt_confirmed_by String?
+
+  stock_out StockOut          @relation(fields: [stock_out_id], references: [id])
+  item      Item              @relation(fields: [item_id], references: [id])
+  location  InventoryLocation @relation(fields: [location_id], references: [id])
+  allocations StockOutLotAllocation[]
+
+  @@unique([stock_out_id, item_id])
+  @@index([item_id])
+  @@map("stock_out_items")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?ш퀬 ?꾩튂 + ?꾩옱怨??ㅻ깄??// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model InventoryLocation {
+  id            String    @id @default(uuid())
+  code          String    @unique
+  name          String
+  department_id String?
+  is_active     Boolean   @default(true)
+  deleted_at    DateTime?
+
+  department      Department?    @relation(fields: [department_id], references: [id])
+  inventory       Inventory[]
+  stock_in_items  StockInItem[]
+  stock_out_items StockOutItem[]
+  inventory_lots  InventoryLot[]
+
+  @@map("inventory_locations")
+}
+
+model Inventory {
+  id            String    @id @default(uuid())
+  item_id       String
+  location_id   String
+  on_hand_qty   Decimal   @default(0)
+  avg_unit_cost Decimal   @default(0)
+  updated_at    DateTime  @updatedAt
+
+  item     Item              @relation(fields: [item_id], references: [id])
+  location InventoryLocation @relation(fields: [location_id], references: [id])
+
+  @@unique([item_id, location_id])
+  @@index([item_id, location_id])
+  @@map("inventory")
+}
+
+model InventoryLot {
+  id              String    @id @default(uuid())
+  stock_in_item_id String
+  goods_receipt_id String
+  item_id         String
+  location_id     String
+  vendor_id       String?
+  received_at     DateTime
+  unit_cost       Decimal   @default(0)
+  received_qty    Decimal   @default(0)
+  remaining_qty   Decimal   @default(0)
+  created_at      DateTime  @default(now())
+  deleted_at      DateTime?
+
+  stock_in_item StockInItem        @relation(fields: [stock_in_item_id], references: [id])
+  goods_receipt GoodsReceipt       @relation(fields: [goods_receipt_id], references: [id])
+  item         Item                @relation(fields: [item_id], references: [id])
+  location     InventoryLocation   @relation(fields: [location_id], references: [id])
+  vendor       Vendor?             @relation(fields: [vendor_id], references: [id])
+  allocations  StockOutLotAllocation[]
+
+  @@unique([stock_in_item_id])
+  @@index([item_id, location_id, received_at])
+  @@index([vendor_id])
+  @@map("inventory_lots")
+}
+
+model StockOutLotAllocation {
+  id              String    @id @default(uuid())
+  stock_out_id    String
+  stock_out_item_id String
+  inventory_lot_id String?
+  issued_qty      Decimal   @default(0)
+  unit_cost       Decimal   @default(0)
+  line_amount     Decimal   @default(0)
+  created_at      DateTime  @default(now())
+
+  stock_out     StockOut    @relation(fields: [stock_out_id], references: [id])
+  stock_out_item StockOutItem @relation(fields: [stock_out_item_id], references: [id])
+  inventory_lot  InventoryLot? @relation(fields: [inventory_lot_id], references: [id])
+
+  @@index([stock_out_id])
+  @@index([stock_out_item_id])
+  @@index([inventory_lot_id])
+  @@map("stock_out_lot_allocations")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  媛먯궗 濡쒓렇 (append-only)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model AuditLog {
+  id                  String   @id @default(uuid())
+  occurred_at         DateTime @default(now())
+  actor_user_id       String?
+  actor_role_snapshot String   @default("")
+  action              String
+  entity_type         String
+  entity_id           String
+  before_json         String   @default("")
+  after_json          String   @default("")
+  reason              String   @default("")
+  ip                  String   @default("")
+
+  actor User? @relation(fields: [actor_user_id], references: [id])
+
+  @@index([entity_type, entity_id, occurred_at])
+  @@index([actor_user_id, occurred_at])
+  @@index([occurred_at])
+  @@map("audit_logs")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?먭? 吏묎퀎 (materialized ??諛곗튂濡?媛깆떊)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model CostStatistic {
+  id             String   @id @default(uuid())
+  year_month     String   // YYYY-MM
+  department_id  String
+  item_id        String
+  issued_qty     Decimal  @default(0)
+  issued_amount  Decimal  @default(0)
+  avg_unit_price Decimal  @default(0)
+  overuse_count  Int      @default(0)
+  updated_at     DateTime @updatedAt
+
+  department Department @relation(fields: [department_id], references: [id])
+  item       Item       @relation(fields: [item_id], references: [id])
+
+  @@unique([year_month, department_id, item_id])
+  @@index([year_month, department_id])
+  @@index([item_id, year_month])
+  @@map("cost_statistics")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  遺?쒕퀎 ?덈ぉ 移댄뀒怨좊━ ?좎껌 沅뚰븳
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model DeptCategoryPermission {
+  id            String @id @default(uuid())
+  department_id String
+  category      String  // ??14媛?移댄뀒怨좊━ 肄붾뱶
+
+  department Department @relation(fields: [department_id], references: [id])
+
+  @@unique([department_id, category])
+  @@map("dept_category_permissions")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  遺?쒕퀎 ?덈ぉ ?⑥쐞 ?좎껌 沅뚰븳
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model DeptItemPermission {
+  id            String @id @default(uuid())
+  department_id String
+  item_id       String
+
+  department Department @relation(fields: [department_id], references: [id])
+  item       Item       @relation(fields: [item_id], references: [id])
+
+  @@unique([department_id, item_id])
+  @@index([department_id])
+  @@map("dept_item_permissions")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?쒖뒪???ㅼ젙 / 諛깆뾽 湲곕줉
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model AppSetting {
+  id          String @id @default(uuid())
+  key         String @unique
+  value       String
+  description String @default("")
+
+  @@map("app_settings")
+}
+
+model BackupRecord {
+  id         String   @id @default(uuid())
+  created_at DateTime @default(now())
+  file_path  String
+  note       String   @default("")
+
+  @@map("backup_records")
+}
+
+model IncinerationEntry {
+  id            String   @id @default(uuid())
+  entry_date    DateTime
+  department_id String   @default("")
+  weight_kg     Decimal  @default(0)
+  note          String   @default("")
+  created_by    String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@unique([entry_date, department_id])
+  @@index([entry_date])
+  @@map("incineration_entries")
+}
+
+model IncinerationMonthlyOverride {
+  id                    String   @id @default(uuid())
+  year_month            String
+  department_id         String   @default("")
+  final_amount_override Decimal?
+  note                  String   @default("")
+  created_by            String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@unique([year_month, department_id])
+  @@index([year_month])
+  @@map("incineration_monthly_overrides")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  ?좎껌 ?ㅼ?以?(愿由ъ옄 吏???좎껌 湲곌컙)
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model RequestSchedule {
+  id           String   @id @default(uuid())
+  request_type String   // CONSUMABLE_REGULAR | DIAPER | NIGHT_SNACK
+  open_from    DateTime // ?좎껌 ?쒖옉?쇱떆
+  open_to      DateTime // ?좎껌 留덇컧?쇱떆
+  period_label String   @default("") // ?? "2026??3??
+  note         String   @default("")
+  created_by   String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([request_type, open_from, open_to])
+  @@map("request_schedules")
+}
+
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+//  諛쒖＜????蹂묐룞?좎껌 ?곌껐 (遺?쒕퀎 ?좎껌?댁뿭 異붿쟻??
+// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
+model PurchaseOrderSource {
+  id              String   @id @default(uuid())
+  po_id           String
+  ward_request_id String
+  created_at      DateTime @default(now())
+
+  po           PurchaseOrder @relation(fields: [po_id], references: [id])
+  ward_request WardRequest   @relation(fields: [ward_request_id], references: [id])
+
+  @@unique([po_id, ward_request_id])
+  @@index([po_id])
+  @@index([ward_request_id])
+  @@map("purchase_order_sources")
+}
+
+// 품목 분류 마스터
+model ItemCategoryMaster {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  group      String   @default("CONSUMABLE") // CONSUMABLE | EQUIPMENT
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  @@map("item_category_masters")
+}
+
+// 통계카테고리 마스터
+model StatsCategoryMaster {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  @@map("stats_category_masters")
+}
+
+// 비용구분 마스터
+model ExpenseScopeMaster {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  @@map("expense_scope_masters")
+}
+
+// 부서 공유 달력 이벤트
+model DeptCalendarEvent {
+  id              String    @id @default(uuid())
+  department_id   String
+  title           String
+  event_date      DateTime
+  end_date        DateTime?
+  color           String    @default("#86efac")
+  event_type      String    @default("EVENT")      // TASK | MEETING | EVENT | OTHER
+  visibility      String    @default("DEPARTMENT")  // PRIVATE | DEPARTMENT | ALL | SPECIFIC
+  shared_user_ids String?                           // JSON: ["userId1","userId2"]
+  start_time      String?                           // "09:00" 24h format (optional)
+  end_time        String?                           // "10:30" 24h format (optional)
+  created_by      String
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  department Department @relation(fields: [department_id], references: [id])
+  creator    User       @relation(fields: [created_by], references: [id])
+
+  @@index([department_id, event_date])
+  @@map("dept_calendar_events")
+}
+
+// ────────────────────────────────────────────────────────────────
+//  관리과 모듈
+// ────────────────────────────────────────────────────────────────
+
+// ── 비품 개별 단위 추적 ──────────────────────────────────────────
+model EquipmentUnit {
+  id             String   @id @default(uuid())
+  serial_no      String   @unique       // EQ-2026-00001
+  item_id        String
+  department_id  String
+  stock_out_id   String?               // 어느 불출에서 생성됐는지
+  location       String   @default("") // 위치 (예: 2병동 간호스테이션)
+  is_primary     Boolean  @default(true) // 정(true) / 부(false)
+  status         String   @default("ACTIVE") // ACTIVE | IN_REPAIR | DISPOSED
+  notes          String   @default("")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  item        Item        @relation(fields: [item_id], references: [id])
+  department  Department  @relation(fields: [department_id], references: [id])
+  repairs     EquipmentRepair[]
+
+  @@index([department_id])
+  @@index([status])
+  @@map("equipment_units")
+}
+
+// ── 비품 수리 요청/이력 ──────────────────────────────────────────
+model EquipmentRepair {
+  id                       String   @id @default(uuid())
+  equipment_unit_id        String
+  requesting_dept_id       String
+  description              String   @default("")
+  attachment_urls          String   @default("[]")  // JSON
+  status                   String   @default("PENDING")
+  // PENDING | IN_PROGRESS | COMPLETED | DISPOSED
+  result_note              String   @default("")
+  disposal_ward_request_id String?  // 수리불가 폐기 시 자동 생성된 WardRequest ID
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  equipment_unit    EquipmentUnit @relation(fields: [equipment_unit_id], references: [id])
+  requesting_dept   Department    @relation(fields: [requesting_dept_id], references: [id])
+
+  @@index([equipment_unit_id])
+  @@index([status])
+  @@map("equipment_repairs")
+}
+
+// ═══════════════════════════════════════════════════
+//  처치 기반 물품 추적 (Treatment-Based Supply Tracking)
+// ═══════════════════════════════════════════════════
+model TreatmentType {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  name       String
+  category   String   @default("")
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  supply_maps        TreatmentSupplyMap[]
+  patient_treatments PatientTreatment[]
+
+  @@map("treatment_types")
+}
+
+model PatientTreatment {
+  id                String    @id @default(uuid())
+  patient_id        String
+  treatment_type_id String
+  started_at        DateTime  @default(now())
+  ended_at          DateTime?
+  note              String    @default("")
+  created_by        String
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+  deleted_at        DateTime?
+
+  patient        Patient       @relation(fields: [patient_id], references: [id])
+  treatment_type TreatmentType @relation(fields: [treatment_type_id], references: [id])
+
+  @@unique([patient_id, treatment_type_id, started_at])
+  @@index([patient_id])
+  @@map("patient_treatments")
+}
+
+model TreatmentSupplyMap {
+  id                String  @id @default(uuid())
+  treatment_type_id String
+  item_id           String
+  qty_per_day       Decimal @default(1)
+  qty_per_week      Decimal @default(0)
+  note              String  @default("")
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  treatment_type TreatmentType @relation(fields: [treatment_type_id], references: [id])
+  item           Item          @relation(fields: [item_id], references: [id])
+
+  @@unique([treatment_type_id, item_id])
+  @@map("treatment_supply_maps")
+}

@@ -1,0 +1,2447 @@
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { User } from 'lucide-react';
+import { api } from '../utils/api';
+import { useAuth } from '../hooks/useAuth';
+import { PageHeader } from '../components/ui';
+import type { HiraDiseaseCodeResult } from '@shared/types';
+
+type MajorTab = 'patients' | 'board' | 'disease';
+type DiseaseSubTab = 'reregistration' | 'codes';
+
+interface Ward {
+  id: string;
+  name: string;
+}
+
+interface RoomConfig {
+  id: string;
+  department_id: string;
+  room_no: string;
+  capacity: number;
+  sort_order: number;
+  is_active: boolean;
+}
+
+interface RoomDraftRow {
+  id?: string;
+  room_no: string;
+  capacity: number;
+  sort_order: number;
+  is_active: boolean;
+}
+
+interface PatientRow {
+  id: string;
+  patient_no: string;
+  chart_no: string;
+  name: string;
+  department_id: string;
+  department_name: string;
+  room_no: string;
+  bed_no: number | null;
+  gender: string;
+  mobility_type: string;
+  insurance_type: string;
+  specializations: string[];
+  infection_strain: string;
+  period_type: string;
+  period_phase: string;
+  patient_group: string;
+  diaper_state: string;
+  diaper_price: number | null;
+  diaper_start_date: string | null;
+  diaper_end_date: string | null;
+  prev_hospital: string;
+  acquaintance: string;
+  acquaintance_color: string;
+  admitted_at: string;
+  discharged_at: string | null;
+  status: 'ADMITTED' | 'DISCHARGED' | 'DECEASED';
+  note: string;
+  disease_code_id: string | null;
+  disease_code_str: string;
+  disease_code_name: string;
+  disease_code_registered_at: string | null;
+  disease_code_expires_at: string | null;
+  main_disease_code_id: string | null;
+  main_disease_code: string;
+  main_disease_name: string;
+  caregiver_type: string;
+  guardian_name: string;
+  billing_sms_phone: string;
+  project_name: string;
+  project_region: string;
+  project_sigungu_office: string;
+  address: string;
+  referral_source: string;
+  discharge_type: string;
+}
+
+interface BoardCell {
+  id: string;
+  patient_id?: string | null;
+  room_no: string;
+  bed_no: number;
+  patient_no: string;
+  chart_no: string;
+  patient_name: string;
+  gender: string;
+  mobility_type: string;
+  insurance_type: string;
+  specializations: string[];
+  infection_strain: string;
+  period_type: string;
+  period_phase: string;
+  period_start_date?: string;
+  period_end_date?: string;
+  patient_group: string;
+  diaper_state: string;
+  diaper_price: number | null;
+  diaper_start_date?: string | null;
+  diaper_end_date?: string | null;
+  prev_hospital: string;
+  acquaintance: string;
+  acquaintance_color: string;
+  status: string;
+  note: string;
+  disease_code_id: string | null;
+  disease_code_registered_at: string | null;
+  disease_code_expires_at: string | null;
+  main_disease_code_id: string | null;
+  caregiver_type: string;
+  guardian_name: string;
+  billing_sms_phone: string;
+  project_name: string;
+  project_region: string;
+  project_sigungu_office: string;
+  address: string;
+  referral_source: string;
+  discharge_type: string;
+}
+
+interface BoardRoom {
+  id: string;
+  room_no: string;
+  capacity: number;
+  cells: BoardCell[];
+}
+
+interface DiseaseCodeItem {
+  id: string;
+  code: string;
+  name: string;
+  code_type: 'MAIN' | 'SEVERE' | 'RARE';
+  is_active: boolean;
+}
+
+interface PatientDiseaseCodeRow {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  chart_no: string;
+  department_name: string;
+  room_no: string;
+  insurance_type: string;
+  status: string;
+  disease_code_id: string;
+  code: string;
+  name: string;
+  code_type: string;
+  registered_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+  note: string;
+}
+
+const MAJOR_TABS: { key: MajorTab; label: string }[] = [
+  { key: 'board', label: '병실현황판' },
+  { key: 'patients', label: '환자리스트' },
+  { key: 'disease', label: '주상병 및 본인부담경감 관리' },
+];
+
+function SelectField({
+  value, onChange, options, disabled,
+}: { value: string; onChange: (v: string) => void; options: { v: string; l: string }[]; disabled?: boolean }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} className={`input h-10 text-sm leading-6 py-2${disabled ? ' opacity-50 cursor-not-allowed' : ''}`}>
+      {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+    </select>
+  );
+}
+
+function GroupedSelectField({
+  value, onChange, groups, disabled,
+}: { value: string; onChange: (v: string) => void; groups: { label?: string; options: { v: string; l: string }[] }[]; disabled?: boolean }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} className={`input h-10 text-sm leading-6 py-2${disabled ? ' opacity-50 cursor-not-allowed' : ''}`}>
+      {groups.map((g, i) =>
+        g.label ? (
+          <optgroup key={i} label={g.label}>
+            {g.options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </optgroup>
+        ) : (
+          g.options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)
+        )
+      )}
+    </select>
+  );
+}
+
+const INSURANCE_GROUPS = [
+  {
+    label: '건강보험',
+    options: [
+      { v: 'HEALTH', l: '일반' },
+      { v: 'HEALTH_REDUCED_SEVERE', l: '본인부담경감 (중증질환)' },
+      { v: 'HEALTH_REDUCED_RARE', l: '본인부담경감 (희귀난치성)' },
+    ],
+  },
+  {
+    label: '의료급여',
+    options: [
+      { v: 'MEDICAL_1', l: '1종' },
+      { v: 'MEDICAL_2', l: '2종' },
+    ],
+  },
+  {
+    options: [
+      { v: 'WORKERS_COMP', l: '산재보험' },
+      { v: 'AUTO_INS', l: '자동차보험' },
+    ],
+  },
+];
+
+const SPECIALIZATION_OPTIONS = [
+  { value: 'INFECT', label: '감염' },
+  { value: 'DIALYSIS', label: '투석' },
+  { value: 'REHAB', label: '재활' },
+] as const;
+const CAREGIVER_OPTIONS = [
+  { v: '', l: '간병유형 없음' },
+  { v: 'CLOSE', l: '밀착간병' },
+  { v: 'OUTSOURCED', l: '외주간병' },
+  { v: 'IN_HOUSE', l: '본원간병' },
+];
+const CAREGIVER_LABEL: Record<string, string> = {
+  CLOSE: '밀착간병',
+  OUTSOURCED: '외주간병',
+  IN_HOUSE: '본원간병',
+};
+const CODE_TYPE_LABEL: Record<string, string> = {
+  MAIN: '주상병',
+  SEVERE: '중증질환',
+  RARE: '희귀난치성',
+};
+
+const valueLabel = {
+  mobility_type: { BEDRIDDEN: '와상', AMBULATORY: '거동' } as Record<string, string>,
+  insurance_type: {
+    HEALTH: '건강보험 (일반)',
+    HEALTH_REDUCED_SEVERE: '건강보험 본인부담경감 (중증질환)',
+    HEALTH_REDUCED_RARE: '건강보험 본인부담경감 (희귀난치성)',
+    MEDICAL_1: '의료급여 1종',
+    MEDICAL_2: '의료급여 2종',
+    WORKERS_COMP: '산재보험',
+    AUTO_INS: '자동차보험',
+  } as Record<string, string>,
+  patient_group: {
+    HIGHEST: '최고도',
+    HIGH: '고도',
+    MEDIUM: '중도',
+    LOW: '경도',
+    SELECT: '선택',
+    UNRATED: '미평가',
+  } as Record<string, string>,
+  period_type: { PNEUMONIA: '폐렴', SEPSIS: '패혈증' } as Record<string, string>,
+  period_phase: { START: '시작', END: '종료' } as Record<string, string>,
+  diaper_state: { IN_HOUSE: '원내', PERSONAL: '본인', NONE: '미사용', CIRCLE: '원내', TRIANGLE: '본인' } as Record<string, string>,
+  infection_strain: { CRE: 'CRE', VRE: 'VRE', MR: 'MR' } as Record<string, string>,
+};
+
+const toLabel = (kind: keyof typeof valueLabel, value?: string) => {
+  if (!value) return '-';
+  return valueLabel[kind][value] ?? value;
+};
+const toCaregiverLabel = (value?: string) => {
+  if (!value) return '-';
+  return CAREGIVER_LABEL[value] ?? value;
+};
+const normalizeGenderForColor = (value?: string) => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (raw === 'FEMALE') return 'F';
+  if (raw === 'MALE') return 'M';
+  return raw;
+};
+const isWardName = (name?: string) => String(name ?? '').includes('병동');
+
+export default function PatientManagePage() {
+  const { user } = useAuth();
+  const [majorTab, setMajorTab] = useState<MajorTab>('board');
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const [wards, setWards] = useState<Ward[]>([]);
+  const [roomConfigs, setRoomConfigs] = useState<RoomConfig[]>([]);
+  const [roomEditMode, setRoomEditMode] = useState(false);
+  const [roomSaving, setRoomSaving] = useState(false);
+  const [roomDraftRows, setRoomDraftRows] = useState<RoomDraftRow[]>([]);
+  const [wardId, setWardId] = useState('');
+  const [boardDate, setBoardDate] = useState(new Date().toISOString().slice(0, 10));
+  const [boardRooms, setBoardRooms] = useState<BoardRoom[]>([]);
+  const [loadingBoard, setLoadingBoard] = useState(false);
+
+  const [patients, setPatients] = useState<PatientRow[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ADMITTED' | 'DISCHARGED' | 'DECEASED' | ''>('ADMITTED');
+  const [listAdmitOpen, setListAdmitOpen] = useState(false);
+  const [admitLoading, setAdmitLoading] = useState(false);
+  const [listAdmitForm, setListAdmitForm] = useState({
+    department_id: '',
+    room_no: '',
+    bed_no: '',
+    chart_no: '',
+    name: '',
+    gender: 'F',
+    mobility_type: 'BEDRIDDEN',
+    insurance_type: 'HEALTH',
+    patient_group: 'UNRATED',
+    specializations: [] as string[],
+    infection_strain: '',
+    period_type: '',
+    period_start_date: '',
+    period_end_date: '',
+    diaper_state: 'NONE',
+    diaper_price: '',
+    diaper_start_date: '',
+    diaper_end_date: '',
+    prev_hospital: '',
+    acquaintance: '',
+    acquaintance_color: '#0ea5e9',
+    admitted_at: new Date().toISOString().slice(0, 10),
+    note: '',
+    disease_code_id: '',
+    disease_code_registered_at: '',
+    disease_code_expires_at: '',
+    main_disease_code_id: '',
+    caregiver_type: '',
+    guardian_name: '',
+    billing_sms_phone: '',
+    project_name: '',
+    project_region: '',
+    project_sigungu_office: '',
+    address: '',
+    referral_source: '',
+    discharge_type: '',
+  });
+
+  const [selectedCell, setSelectedCell] = useState<BoardCell | null>(null);
+  const [savingCell, setSavingCell] = useState(false);
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferWardId, setTransferWardId] = useState('');
+  const [transferRoomNo, setTransferRoomNo] = useState('');
+  const [transferBedNo, setTransferBedNo] = useState<number | null>(null);
+  const [transferRooms, setTransferRooms] = useState<{ id: string; room_no: string; capacity: number }[]>([]);
+  const [transferBoard, setTransferBoard] = useState<any[]>([]);
+  const [transferMemo, setTransferMemo] = useState('');
+  const [transferring, setTransferring] = useState(false);
+
+  const [hospitals, setHospitals] = useState<{ id: string; name: string }[]>([]);
+  const [newHospitalName, setNewHospitalName] = useState('');
+  const [importingPatients, setImportingPatients] = useState(false);
+
+  // 파일 자동감지 상태
+  const [watcherConfig, setWatcherConfig] = useState<{
+    file_path: string; dept_id: string; enabled: boolean; is_running: boolean;
+    last_status: { created?: number; skipped?: number; errors?: any[]; synced_at?: string; error?: string } | null;
+  }>({ file_path: '', dept_id: '', enabled: false, is_running: false, last_status: null });
+  const [watcherSaving, setWatcherSaving] = useState(false);
+
+  // 대량등록 모달 상태
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkStep, setBulkStep] = useState<1|2|3>(1);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkPreview, setBulkPreview] = useState<{
+    is_header_mode: boolean; headers: string[]; recognized: string[]; preview: string[][]; total: number;
+  } | null>(null);
+  const [bulkPreviewing, setBulkPreviewing] = useState(false);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: { row: number; message: string }[] } | null>(null);
+  const [bulkDragOver, setBulkDragOver] = useState(false);
+
+  // 주상병 관리 탭 상태
+  const [diseaseSubTab, setDiseaseSubTab] = useState<DiseaseSubTab>('reregistration');
+  const [diseaseCodes, setDiseaseCodes] = useState<DiseaseCodeItem[]>([]);
+  const [patientDiseaseRows, setPatientDiseaseRows] = useState<PatientDiseaseCodeRow[]>([]);
+  const [codeTypeFilter, setCodeTypeFilter] = useState<'MAIN' | 'SEVERE' | 'RARE' | ''>('');
+  const [regTypeFilter, setRegTypeFilter] = useState<'SEVERE' | 'RARE' | ''>('');
+  // V코드 마스터 편집 모달
+  const [codeEditOpen, setCodeEditOpen] = useState(false);
+  const [codeForm, setCodeForm] = useState<{ code: string; name: string; code_type: 'MAIN' | 'SEVERE' | 'RARE' }>({ code: '', name: '', code_type: 'MAIN' });
+  const [editingCodeId, setEditingCodeId] = useState<string | null>(null);
+  const [codeSaving, setCodeSaving] = useState(false);
+  // HIRA 질병코드 동기화
+  const [hiraSyncing, setHiraSyncing] = useState(false);
+
+  // HIRA 질병코드 검색
+  const [hiraCodeModal, setHiraCodeModal] = useState(false);
+  const [hiraCodeSearch, setHiraCodeSearch] = useState('');
+  const [hiraCodeResults, setHiraCodeResults] = useState<HiraDiseaseCodeResult[]>([]);
+  const [hiraCodeLoading, setHiraCodeLoading] = useState(false);
+  const [hiraCodePage, setHiraCodePage] = useState(1);
+  const [hiraCodeTotal, setHiraCodeTotal] = useState(0);
+  const [hiraSearchType, setHiraSearchType] = useState<'SICK_NM' | 'SICK_CD'>('SICK_NM');
+
+  // 재등록 편집 모달
+  const [regEditOpen, setRegEditOpen] = useState(false);
+  const [regForm, setRegForm] = useState({ patient_id: '', disease_code_id: '', registered_at: '', expires_at: '', note: '' });
+  const [editingRegId, setEditingRegId] = useState<string | null>(null);
+  const [regSaving, setRegSaving] = useState(false);
+
+  // ── 환자 처치 관련 상태 ──
+  const [treatmentTypes, setTreatmentTypes] = useState<{ id: string; code: string; name: string; category: string }[]>([]);
+  const [patientTreatments, setPatientTreatments] = useState<any[]>([]);
+  const [treatmentOpen, setTreatmentOpen] = useState(false);
+  const [addTreatmentId, setAddTreatmentId] = useState('');
+
+  const loadTreatmentTypes = useCallback(async () => {
+    try {
+      const data = await api('/treatment-types');
+      setTreatmentTypes(Array.isArray(data) ? data.filter((t: any) => t.is_active) : []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadPatientTreatments = useCallback(async (patientId: string) => {
+    try {
+      const data = await api(`/treatment-types/patient-treatments/${patientId}`);
+      setPatientTreatments(Array.isArray(data) ? data : []);
+    } catch { setPatientTreatments([]); }
+  }, []);
+
+  const addPatientTreatment = async (patientId: string) => {
+    if (!addTreatmentId) return;
+    try {
+      await api('/treatment-types/patient-treatments', {
+        method: 'POST',
+        body: JSON.stringify({ patient_id: patientId, treatment_type_id: addTreatmentId }),
+      });
+      setAddTreatmentId('');
+      loadPatientTreatments(patientId);
+    } catch (e: any) {
+      showMsg('err', e.message || '처치 등록 실패');
+    }
+  };
+
+  const endPatientTreatment = async (ptId: string, patientId: string) => {
+    try {
+      await api(`/treatment-types/patient-treatments/${ptId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ended_at: new Date().toISOString() }),
+      });
+      loadPatientTreatments(patientId);
+    } catch (e: any) {
+      showMsg('err', e.message || '처치 종료 실패');
+    }
+  };
+
+  const deletePatientTreatment = async (ptId: string, patientId: string) => {
+    try {
+      await api(`/treatment-types/patient-treatments/${ptId}`, { method: 'DELETE' });
+      loadPatientTreatments(patientId);
+    } catch (e: any) {
+      showMsg('err', e.message || '처치 삭제 실패');
+    }
+  };
+
+  // 처치유형 로드 (한번만)
+  useEffect(() => { loadTreatmentTypes(); }, [loadTreatmentTypes]);
+
+  const showMsg = (type: 'ok' | 'err', text: string) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 3500);
+  };
+
+  // 전실 대상 병동 선택 시 병실 목록 + 보드 로드
+  const loadTransferRooms = async (deptId: string) => {
+    if (!deptId) { setTransferRooms([]); setTransferBoard([]); return; }
+    try {
+      const r = await api(`/patients/board?department_id=${deptId}`);
+      const grouped = r?.rooms ?? [];
+      setTransferRooms(grouped.map((rm: any) => ({ id: rm.id, room_no: rm.room_no, capacity: rm.capacity })));
+      // cells를 flat 배열로 변환
+      const allCells = grouped.flatMap((rm: any) => (rm.cells ?? []).map((c: any) => ({ ...c, ward_room_id: rm.id })));
+      setTransferBoard(allCells);
+    } catch {
+      setTransferRooms([]);
+      setTransferBoard([]);
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!selectedCell?.patient_id || !transferWardId) return;
+    setTransferring(true);
+    try {
+      await api(`/patients/${selectedCell.patient_id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          department_id: transferWardId,
+          room_no: transferRoomNo,
+          bed_no: transferBedNo,
+          memo: transferMemo,
+        }),
+      });
+      showMsg('ok', '병동 이동 처리되었습니다.');
+      setTransferOpen(false);
+      setTransferMemo('');
+      setTransferRoomNo('');
+      setTransferBedNo(null);
+      setTransferRooms([]);
+      setTransferBoard([]);
+      setSelectedCell(null);
+      loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message || '병동 이동에 실패했습니다.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+  const validateProjectScopeInput = (projectName?: string, projectRegion?: string, projectSigunguOffice?: string) => {
+    if (String(projectName ?? '').trim() && (!String(projectRegion ?? '').trim() || !String(projectSigunguOffice ?? '').trim())) {
+      return '사업명칭 입력 시 지역과 시군구청을 함께 입력해 주세요.';
+    }
+    return null;
+  };
+  const bedCellToneClass = (cell: BoardCell) => {
+    const occupied = Boolean(cell.patient_name?.trim());
+    if (!occupied) return 'bg-white text-slate-800 border-gray-200 hover:bg-gray-50';
+    const g = normalizeGenderForColor(cell.gender);
+    if (g === 'F') return 'bg-pink-100 text-pink-900 border-pink-300 hover:bg-pink-200';
+    if (g === 'M') return 'bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200';
+    return 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200';
+  };
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const r = await api('/patients/room-config');
+      const wardOnly: Ward[] = Array.isArray(r.wards)
+        ? (r.wards as Ward[]).filter((w) => isWardName(w.name))
+        : [];
+      setWards(wardOnly);
+      setRoomConfigs(r.rooms || []);
+      const firstWardId = wardOnly[0]?.id ?? '';
+      setWardId(prev => (wardOnly.some((w) => w.id === prev) ? prev : firstWardId));
+      if (wardOnly.length === 0) setRoomEditMode(false);
+    } catch (e: any) {
+      setWards([]);
+      setRoomConfigs([]);
+      setRoomEditMode(false);
+      showMsg('err', e.message || '병실 설정을 불러오지 못했습니다.');
+    }
+  }, []);
+
+  const loadHospitals = useCallback(async () => {
+    try {
+      const rows = await api('/patients/hospitals');
+      setHospitals(Array.isArray(rows) ? rows : []);
+    } catch {
+      setHospitals([]);
+    }
+  }, []);
+
+  const loadDiseaseCodes = useCallback(async () => {
+    try {
+      const rows = await api('/disease-codes?includeInactive=true');
+      setDiseaseCodes(Array.isArray(rows) ? rows : []);
+    } catch {
+      setDiseaseCodes([]);
+    }
+  }, []);
+
+  const loadPatientDiseaseRows = useCallback(async () => {
+    try {
+      const rows = await api('/disease-codes/patient-registrations');
+      setPatientDiseaseRows(Array.isArray(rows) ? rows : []);
+    } catch {
+      setPatientDiseaseRows([]);
+    }
+  }, []);
+
+  const loadPatients = useCallback(async () => {
+    setLoadingPatients(true);
+    try {
+      const p = new URLSearchParams();
+      if (statusFilter) p.set('status', statusFilter);
+      if (search) p.set('search', search);
+      const rows = await api(`/patients?${p.toString()}`);
+      setPatients(rows);
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setLoadingPatients(false);
+    }
+  }, [statusFilter, search]);
+
+  const loadBoard = useCallback(async () => {
+    if (!wardId) return;
+    setLoadingBoard(true);
+    try {
+      const r = await api(`/patients/board?department_id=${wardId}&date=${boardDate}`);
+      setBoardRooms(r.rooms || []);
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setLoadingBoard(false);
+    }
+  }, [wardId, boardDate]);
+
+  // 파일 와처 설정 로드
+  useEffect(() => {
+    if (user?.permissions?.includes('SYSTEM_ADMIN') || user?.permissions?.includes('REQUEST_USE') || user?.permissions?.includes('PURCHASE_MANAGE')) {
+      api('/patients/file-watcher/config').then(setWatcherConfig).catch(() => {});
+    }
+  }, [user]);
+
+  const saveWatcherConfig = async () => {
+    setWatcherSaving(true);
+    try {
+      const data = await api('/patients/file-watcher/config', { method: 'PUT', body: JSON.stringify(watcherConfig) });
+      setWatcherConfig(data);
+      showMsg('ok', data.is_running ? '파일 감지가 시작되었습니다.' : '설정이 저장되었습니다.');
+    } catch { showMsg('err', '저장 실패'); }
+    finally { setWatcherSaving(false); }
+  };
+
+  const isElectron = !!(window as any).electronAPI?.selectExcelFile;
+
+  const selectExcelFilePath = async () => {
+    try {
+      const elApi = (window as any).electronAPI;
+      const filePath = await elApi.selectExcelFile();
+      if (!filePath) return;
+      await applyWatcherFilePath(filePath);
+    } catch (e: any) {
+      showMsg('err', e?.message || '파일 선택에 실패했습니다');
+    }
+  };
+
+  const applyWatcherFilePath = async (filePath: string) => {
+    if (!filePath.trim()) { showMsg('err', '파일 경로를 입력하세요'); return; }
+    try {
+      const newConfig = { ...watcherConfig, file_path: filePath.trim(), enabled: true };
+      setWatcherConfig(newConfig);
+      await api('/patients/file-watcher/config', { method: 'PUT', body: JSON.stringify(newConfig) });
+      const data = await api('/patients/file-watcher/config');
+      setWatcherConfig(data);
+      showMsg('ok', '파일 지정 완료 — 자동감지 시작됨');
+    } catch (e: any) {
+      showMsg('err', e?.message || '설정 저장 실패');
+    }
+  };
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+  useEffect(() => { loadHospitals(); }, [loadHospitals]);
+  useEffect(() => { loadPatients(); }, [loadPatients]);
+  useEffect(() => { if (majorTab === 'board') loadBoard(); }, [majorTab, loadBoard]);
+  useEffect(() => { loadDiseaseCodes(); }, [loadDiseaseCodes]);
+  useEffect(() => {
+    if (majorTab === 'disease') {
+      loadDiseaseCodes();
+      loadPatientDiseaseRows();
+    }
+  }, [majorTab, loadDiseaseCodes, loadPatientDiseaseRows]);
+
+  const mergedPatients = useMemo(() => patients, [patients]);
+  const diseaseCodeLabelById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const code of diseaseCodes) {
+      map[code.id] = `${code.code} ${code.name}`;
+    }
+    return map;
+  }, [diseaseCodes]);
+
+  const wardRoomRows = useMemo(
+    () => roomConfigs
+      .filter(r => r.department_id === wardId)
+      .sort((a, b) => a.sort_order - b.sort_order),
+    [roomConfigs, wardId]
+  );
+
+  const saveCell = async () => {
+    if (!selectedCell) return;
+    const projectError = validateProjectScopeInput(selectedCell.project_name, selectedCell.project_region, selectedCell.project_sigungu_office);
+    if (projectError) return showMsg('err', projectError);
+    // 빈 병상에 환자 정보를 입력한 경우, 저장 버튼도 입원 등록으로 처리
+    if (!selectedCell.patient_id && (selectedCell.patient_name?.trim() || selectedCell.chart_no?.trim() || selectedCell.patient_no?.trim())) {
+      await admitFromBoard();
+      return;
+    }
+    setSavingCell(true);
+    try {
+      await api(`/patients/board/cell/${selectedCell.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          patient_no: selectedCell.patient_no,
+          chart_no: selectedCell.chart_no,
+          name: selectedCell.patient_name,
+          gender: selectedCell.gender,
+          mobility_type: selectedCell.mobility_type,
+          insurance_type: selectedCell.insurance_type,
+          specializations: selectedCell.specializations,
+          infection_strain: selectedCell.infection_strain,
+          period_type: selectedCell.period_type,
+          period_start_date: selectedCell.period_start_date || '',
+          period_end_date: selectedCell.period_end_date || '',
+          patient_group: selectedCell.patient_group,
+          diaper_state: selectedCell.diaper_state,
+          diaper_price: selectedCell.diaper_price,
+          diaper_start_date: selectedCell.diaper_start_date || null,
+          diaper_end_date: selectedCell.diaper_end_date || null,
+          prev_hospital: selectedCell.prev_hospital,
+          acquaintance: selectedCell.acquaintance,
+          acquaintance_color: selectedCell.acquaintance_color,
+          main_disease_code_id: selectedCell.main_disease_code_id || null,
+          caregiver_type: selectedCell.caregiver_type,
+          guardian_name: selectedCell.guardian_name,
+          billing_sms_phone: selectedCell.billing_sms_phone,
+          project_name: selectedCell.project_name,
+          project_region: selectedCell.project_region,
+          project_sigungu_office: selectedCell.project_sigungu_office,
+          address: selectedCell.address || '',
+          referral_source: selectedCell.referral_source || '',
+          discharge_type: selectedCell.discharge_type || '',
+          note: selectedCell.note,
+          status: selectedCell.status,
+        }),
+      });
+      // V코드가 있고 실제 환자와 연결된 경우, 환자 레코드에도 V코드 정보 저장
+      if (selectedCell.patient_id && (selectedCell.disease_code_id !== undefined)) {
+        try {
+          await api(`/patients/${selectedCell.patient_id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              disease_code_id: selectedCell.disease_code_id || null,
+              disease_code_registered_at: selectedCell.disease_code_registered_at || null,
+              disease_code_expires_at: selectedCell.disease_code_expires_at || null,
+              main_disease_code_id: selectedCell.main_disease_code_id || null,
+            }),
+          });
+        } catch { /* V코드 저장 실패는 무시 */ }
+      }
+      setSelectedCell(null);
+      showMsg('ok', '병상 정보 저장 완료');
+      loadBoard();
+      loadPatients();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setSavingCell(false);
+    }
+  };
+
+  const downloadPatientTemplate = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/patients/import/template', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) throw new Error('템플릿 다운로드 실패');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'patient_import_template.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      showMsg('err', e.message || '템플릿 다운로드 실패');
+    }
+  };
+
+  const importPatients = async (file?: File | null) => {
+    if (!file) return;
+    setImportingPatients(true);
+    try {
+      const token = localStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/patients/import', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '대량등록 실패');
+      showMsg('ok', `대량등록 완료: 등록 ${json.created ?? 0}건, 중복 ${json.skipped ?? 0}건`);
+      loadPatients();
+      loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message || '대량등록 실패');
+    } finally {
+      setImportingPatients(false);
+    }
+  };
+
+  const openBulkModal = () => {
+    setBulkModalOpen(true);
+    setBulkStep(1);
+    setBulkFile(null);
+    setBulkPreview(null);
+    setBulkResult(null);
+    setBulkDragOver(false);
+  };
+
+  const closeBulkModal = () => {
+    setBulkModalOpen(false);
+  };
+
+  const handleBulkFileSelect = async (file: File) => {
+    setBulkFile(file);
+    setBulkPreviewing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/patients/import/preview', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '미리보기 실패');
+      setBulkPreview(json);
+      setBulkStep(2);
+    } catch (e: any) {
+      showMsg('err', e.message || '파일 처리 오류');
+    } finally {
+      setBulkPreviewing(false);
+    }
+  };
+
+  const startBulkImport = async () => {
+    if (!bulkFile) return;
+    setBulkImporting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('file', bulkFile);
+      const res = await fetch('/api/patients/import', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '대량등록 실패');
+      setBulkResult(json);
+      setBulkStep(3);
+      if (json.created > 0) {
+        loadPatients();
+        loadBoard();
+      }
+    } catch (e: any) {
+      showMsg('err', e.message || '대량등록 실패');
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
+  const addHospital = async () => {
+    const name = newHospitalName.trim();
+    if (!name) return;
+    try {
+      await api('/patients/hospitals', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setNewHospitalName('');
+      await loadHospitals();
+      showMsg('ok', '병원 등록 완료');
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const openListAdmitModal = () => {
+    const firstWard = wards[0]?.id ?? '';
+    setListAdmitForm({
+      department_id: wardId || firstWard,
+      room_no: '',
+      bed_no: '',
+      chart_no: '',
+      name: '',
+      gender: 'F',
+      mobility_type: 'BEDRIDDEN',
+      insurance_type: 'HEALTH',
+      patient_group: 'UNRATED',
+      specializations: [],
+      infection_strain: '',
+      period_type: '',
+      period_start_date: '',
+      period_end_date: '',
+      diaper_state: 'NONE',
+      diaper_price: '',
+      diaper_start_date: '',
+      diaper_end_date: '',
+      prev_hospital: '',
+      acquaintance: '',
+      acquaintance_color: '#0ea5e9',
+      admitted_at: new Date().toISOString().slice(0, 10),
+      note: '',
+      disease_code_id: '',
+      disease_code_registered_at: '',
+      disease_code_expires_at: '',
+      main_disease_code_id: '',
+      caregiver_type: '',
+      guardian_name: '',
+      billing_sms_phone: '',
+      project_name: '',
+      project_region: '',
+      project_sigungu_office: '',
+      address: '',
+      referral_source: '',
+      discharge_type: '',
+    });
+    setListAdmitOpen(true);
+  };
+
+  const admitFromList = async () => {
+    if (!listAdmitForm.department_id || !listAdmitForm.room_no || !listAdmitForm.bed_no || !listAdmitForm.chart_no || !listAdmitForm.name) {
+      showMsg('err', '병동/병실/자리/차트번호/이름을 입력해 주세요.');
+      return;
+    }
+    const projectError = validateProjectScopeInput(listAdmitForm.project_name, listAdmitForm.project_region, listAdmitForm.project_sigungu_office);
+    if (projectError) {
+      showMsg('err', projectError);
+      return;
+    }
+    setAdmitLoading(true);
+    try {
+      await api('/patients/admit', {
+        method: 'POST',
+        body: JSON.stringify({
+          department_id: listAdmitForm.department_id,
+          room_no: listAdmitForm.room_no,
+          bed_no: Number(listAdmitForm.bed_no),
+          patient_no: listAdmitForm.chart_no,
+          chart_no: listAdmitForm.chart_no,
+          name: listAdmitForm.name,
+          gender: listAdmitForm.gender,
+          mobility_type: listAdmitForm.mobility_type,
+          insurance_type: listAdmitForm.insurance_type,
+          patient_group: listAdmitForm.patient_group,
+          specializations: listAdmitForm.specializations,
+          infection_strain: listAdmitForm.infection_strain,
+          period_type: listAdmitForm.period_type,
+          period_phase: '',
+          period_start_date: listAdmitForm.period_start_date || '',
+          period_end_date: listAdmitForm.period_end_date || '',
+          diaper_state: listAdmitForm.diaper_state,
+          diaper_price: listAdmitForm.diaper_price ? Number(listAdmitForm.diaper_price) : null,
+          diaper_start_date: listAdmitForm.diaper_start_date || null,
+          diaper_end_date: listAdmitForm.diaper_end_date || null,
+          prev_hospital: listAdmitForm.prev_hospital,
+          acquaintance: listAdmitForm.acquaintance,
+          acquaintance_color: listAdmitForm.acquaintance_color,
+          main_disease_code_id: listAdmitForm.main_disease_code_id || null,
+          caregiver_type: listAdmitForm.caregiver_type || '',
+          guardian_name: listAdmitForm.guardian_name || '',
+          billing_sms_phone: listAdmitForm.billing_sms_phone || '',
+          project_name: listAdmitForm.project_name || '',
+          project_region: listAdmitForm.project_region || '',
+          project_sigungu_office: listAdmitForm.project_sigungu_office || '',
+          address: listAdmitForm.address || '',
+          referral_source: listAdmitForm.referral_source || '',
+          admitted_at: listAdmitForm.admitted_at,
+          note: listAdmitForm.note || '',
+          disease_code_id: listAdmitForm.disease_code_id || null,
+          disease_code_registered_at: listAdmitForm.disease_code_registered_at || null,
+          disease_code_expires_at: listAdmitForm.disease_code_expires_at || null,
+        }),
+      });
+      setListAdmitOpen(false);
+      showMsg('ok', '입원 등록 완료');
+      loadBoard();
+      loadPatients();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setAdmitLoading(false);
+    }
+  };
+
+  const discharge = async (id: string, dischargeType?: string) => {
+    try {
+      await api(`/patients/${id}/discharge`, { method: 'POST', body: JSON.stringify({ discharged_at: new Date().toISOString().slice(0, 10), discharge_type: dischargeType || '' }) });
+      showMsg('ok', '퇴원 처리 완료');
+      loadPatients();
+      loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const death = async (id: string) => {
+    try {
+      await api(`/patients/${id}/death`, { method: 'POST', body: JSON.stringify({ deceased_at: new Date().toISOString().slice(0, 10) }) });
+      showMsg('ok', '사망 처리 완료');
+      loadPatients();
+      loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  // V코드 마스터 저장
+  const saveCode = async () => {
+    if (!codeForm.code || !codeForm.name) return showMsg('err', '코드번호와 질환명을 입력해 주세요.');
+    setCodeSaving(true);
+    try {
+      if (editingCodeId) {
+        await api(`/disease-codes/${editingCodeId}`, {
+          method: 'PUT',
+          body: JSON.stringify(codeForm),
+        });
+      } else {
+        await api('/disease-codes', {
+          method: 'POST',
+          body: JSON.stringify(codeForm),
+        });
+      }
+      setCodeEditOpen(false);
+      setEditingCodeId(null);
+      setCodeForm({ code: '', name: '', code_type: 'MAIN' });
+      await loadDiseaseCodes();
+      showMsg('ok', editingCodeId ? '코드 수정 완료' : '코드 등록 완료');
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setCodeSaving(false);
+    }
+  };
+
+  const deleteCode = async (id: string) => {
+    if (!window.confirm('이 코드를 삭제하시겠습니까?')) return;
+    try {
+      await api(`/disease-codes/${id}`, { method: 'DELETE' });
+      await loadDiseaseCodes();
+      showMsg('ok', '삭제 완료');
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const syncHiraDiseaseCodes = async () => {
+    if (!window.confirm('HIRA API에서 전체 질병코드(약 2,000건)를 가져와 등록합니다. 진행하시겠습니까?')) return;
+    setHiraSyncing(true);
+    try {
+      const result = await api('/hira/sync-disease-codes', { method: 'POST' });
+      showMsg('ok', result.message || '동기화 완료');
+      await loadDiseaseCodes();
+    } catch (e: any) {
+      showMsg('err', e.message || '동기화 실패');
+    } finally {
+      setHiraSyncing(false);
+    }
+  };
+
+  const searchHiraCode = async (page = 1) => {
+    if (!hiraCodeSearch.trim()) return;
+    setHiraCodeLoading(true);
+    try {
+      const params = new URLSearchParams({ search: hiraCodeSearch.trim(), searchType: hiraSearchType, pageNo: String(page), numOfRows: '20' });
+      const data = await api(`/hira/disease-codes?${params}`);
+      setHiraCodeResults(data.items ?? []);
+      setHiraCodeTotal(data.totalCount ?? 0);
+      setHiraCodePage(page);
+    } catch (e: any) {
+      showMsg('err', e.message || 'HIRA 검색 실패');
+    } finally {
+      setHiraCodeLoading(false);
+    }
+  };
+
+  const selectHiraCode = (item: HiraDiseaseCodeResult) => {
+    setCodeForm(f => ({ ...f, code: item.sickCd, name: item.sickNm }));
+    setHiraCodeModal(false);
+    showMsg('ok', `"${item.sickCd} ${item.sickNm}" 선택됨`);
+  };
+
+  // 재등록 이력 저장
+  const saveReg = async () => {
+    if (!regForm.patient_id || !regForm.disease_code_id || !regForm.registered_at) {
+      return showMsg('err', '환자, V코드, 등록일은 필수입니다.');
+    }
+    setRegSaving(true);
+    try {
+      if (editingRegId) {
+        await api(`/disease-codes/patient-registrations/${editingRegId}`, {
+          method: 'PUT',
+          body: JSON.stringify(regForm),
+        });
+      } else {
+        await api('/disease-codes/patient-registrations', {
+          method: 'POST',
+          body: JSON.stringify(regForm),
+        });
+      }
+      setRegEditOpen(false);
+      setEditingRegId(null);
+      setRegForm({ patient_id: '', disease_code_id: '', registered_at: '', expires_at: '', note: '' });
+      await loadPatientDiseaseRows();
+      showMsg('ok', editingRegId ? '수정 완료' : '등록 완료');
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setRegSaving(false);
+    }
+  };
+
+  const deleteReg = async (id: string) => {
+    if (!window.confirm('이 이력을 삭제하시겠습니까?')) return;
+    try {
+      await api(`/disease-codes/patient-registrations/${id}`, { method: 'DELETE' });
+      await loadPatientDiseaseRows();
+      showMsg('ok', '삭제 완료');
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const wardButtons = wards.map(w => (
+    <button
+      key={w.id}
+      onClick={() => {
+        setWardId(w.id);
+        setRoomEditMode(false);
+      }}
+      className={`px-3 py-1.5 rounded-lg border text-sm ${wardId === w.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-gray-200'}`}
+    >
+      {w.name}
+    </button>
+  ));
+
+  const startRoomEdit = () => {
+    if (!wardId) {
+      showMsg('err', '병동을 먼저 선택해 주세요.');
+      return;
+    }
+    setRoomDraftRows(
+      wardRoomRows.map((r, idx) => ({
+        id: r.id,
+        room_no: r.room_no,
+        capacity: r.capacity,
+        sort_order: r.sort_order ?? idx + 1,
+        is_active: r.is_active,
+      }))
+    );
+    setRoomEditMode(true);
+  };
+
+  const addRoomRow = () => {
+    setRoomDraftRows(prev => ([
+      ...prev,
+      { room_no: '', capacity: 6, sort_order: prev.length + 1, is_active: true },
+    ]));
+  };
+
+  const removeRoomRow = (idx: number) => {
+    setRoomDraftRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, sort_order: i + 1 })));
+  };
+
+  const saveRoomConfig = async () => {
+    if (!wardId) return;
+    const cleaned = roomDraftRows
+      .map((r, i) => ({ ...r, room_no: r.room_no.trim(), capacity: Math.max(1, Number(r.capacity || 1)), sort_order: i + 1 }))
+      .filter(r => r.room_no.length > 0);
+    if (cleaned.length === 0) {
+      showMsg('err', '최소 1개 병실은 필요합니다.');
+      return;
+    }
+    const hasDup = new Set(cleaned.map(r => r.room_no)).size !== cleaned.length;
+    if (hasDup) {
+      showMsg('err', '중복된 병실명이 있습니다.');
+      return;
+    }
+    setRoomSaving(true);
+    try {
+      await api(`/patients/room-config/${wardId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ rooms: cleaned }),
+      });
+      showMsg('ok', '병실 설정 저장 완료');
+      setRoomEditMode(false);
+      await loadConfig();
+      await loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    } finally {
+      setRoomSaving(false);
+    }
+  };
+
+  const extractPeriodFromNote = (note?: string) => {
+    const text = String(note || '');
+    const m = text.match(/\[기간:([^\]~]+)~([^\]]+)\]/);
+    if (!m) return { start: '', end: '' };
+    const start = m[1] === '-' ? '' : m[1];
+    const end = m[2] === '-' ? '' : m[2];
+    return { start, end };
+  };
+
+  const admitFromBoard = async () => {
+    if (!selectedCell) return;
+    if (!selectedCell.patient_name?.trim()) return showMsg('err', '성명을 입력해 주세요.');
+    if (!selectedCell.chart_no?.trim()) return showMsg('err', '차트번호를 입력해 주세요.');
+    const projectError = validateProjectScopeInput(selectedCell.project_name, selectedCell.project_region, selectedCell.project_sigungu_office);
+    if (projectError) return showMsg('err', projectError);
+    try {
+      await api('/patients/admit', {
+        method: 'POST',
+        body: JSON.stringify({
+          department_id: wardId,
+          room_no: selectedCell.room_no,
+          bed_no: selectedCell.bed_no,
+          chart_no: selectedCell.chart_no,
+          patient_no: selectedCell.chart_no,
+          name: selectedCell.patient_name,
+          gender: selectedCell.gender,
+          mobility_type: selectedCell.mobility_type,
+          insurance_type: selectedCell.insurance_type,
+          patient_group: selectedCell.patient_group,
+          specializations: selectedCell.specializations || [],
+          infection_strain: selectedCell.infection_strain || '',
+          period_type: selectedCell.period_type || '',
+          period_phase: '',
+          period_start_date: selectedCell.period_start_date || '',
+          period_end_date: selectedCell.period_end_date || '',
+          diaper_state: selectedCell.diaper_state || '',
+          diaper_price: selectedCell.diaper_price ?? null,
+          diaper_start_date: selectedCell.diaper_start_date || null,
+          diaper_end_date: selectedCell.diaper_end_date || null,
+          prev_hospital: selectedCell.prev_hospital || '',
+          acquaintance: selectedCell.acquaintance || '',
+          acquaintance_color: selectedCell.acquaintance_color || '#0ea5e9',
+          main_disease_code_id: selectedCell.main_disease_code_id || null,
+          caregiver_type: selectedCell.caregiver_type || '',
+          guardian_name: selectedCell.guardian_name || '',
+          billing_sms_phone: selectedCell.billing_sms_phone || '',
+          project_name: selectedCell.project_name || '',
+          project_region: selectedCell.project_region || '',
+          project_sigungu_office: selectedCell.project_sigungu_office || '',
+          admitted_at: boardDate,
+          note: selectedCell.note || '',
+          disease_code_id: selectedCell.disease_code_id || null,
+          disease_code_registered_at: selectedCell.disease_code_registered_at || null,
+          disease_code_expires_at: selectedCell.disease_code_expires_at || null,
+        }),
+      });
+      setSelectedCell(null);
+      showMsg('ok', '입원 등록 완료');
+      loadBoard();
+      loadPatients();
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const dischargeFromBoard = async () => {
+    if (!selectedCell) return;
+    try {
+      let linkedId = selectedCell.patient_id
+        || mergedPatients.find(p => p.status === 'ADMITTED' && p.room_no === selectedCell.room_no && Number(p.bed_no || 0) === Number(selectedCell.bed_no || 0))?.id;
+      if (!linkedId) {
+        const rows = await api('/patients?status=ADMITTED');
+        linkedId = (rows || []).find((p: any) => p.room_no === selectedCell.room_no && Number(p.bed_no || 0) === Number(selectedCell.bed_no || 0))?.id;
+      }
+      if (!linkedId) return showMsg('err', '퇴원 처리할 환자 ID를 찾지 못했습니다.');
+      await discharge(linkedId, selectedCell.discharge_type);
+      setSelectedCell(null);
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  const deathFromBoard = async () => {
+    if (!selectedCell) return;
+    try {
+      let linkedId = selectedCell.patient_id
+        || mergedPatients.find(p => p.status === 'ADMITTED' && p.room_no === selectedCell.room_no && Number(p.bed_no || 0) === Number(selectedCell.bed_no || 0))?.id;
+      if (!linkedId) {
+        const rows = await api('/patients?status=ADMITTED');
+        linkedId = (rows || []).find((p: any) => p.room_no === selectedCell.room_no && Number(p.bed_no || 0) === Number(selectedCell.bed_no || 0))?.id;
+      }
+      if (!linkedId) return showMsg('err', '사망 처리할 환자 ID를 찾지 못했습니다.');
+      await death(linkedId);
+      setSelectedCell(null);
+    } catch (e: any) {
+      showMsg('err', e.message);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        icon={User}
+        title="환자 관리"
+        description={`${user?.department_name} · 환자/병실 통합 관리`}
+      />
+
+      <div className="flex border-b border-gray-200 mb-4">
+        {MAJOR_TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setMajorTab(t.key)}
+            className={`px-5 py-2.5 text-sm border-b-2 ${majorTab === t.key ? 'border-blue-600 text-blue-700 font-semibold' : 'border-transparent text-slate-500'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {msg && <div className={`mb-4 p-3 rounded text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</div>}
+
+      {majorTab === 'patients' && (
+        <div className="space-y-3">
+          <div className="card p-3 flex flex-wrap gap-2 items-center">
+            <input className="input w-56" value={search} onChange={e => setSearch(e.target.value)} placeholder="이름/환자번호/병실 검색" />
+            <SelectField value={statusFilter} onChange={v => setStatusFilter(v as any)} options={[
+              { v: 'ADMITTED', l: '입원중' }, { v: 'DISCHARGED', l: '퇴원' }, { v: 'DECEASED', l: '사망' }, { v: '', l: '전체' },
+            ]} />
+            <button onClick={loadPatients} className="btn-secondary">조회</button>
+            <button onClick={openListAdmitModal} className="btn-primary">입원 등록</button>
+            <button onClick={openBulkModal} className="btn-secondary">엑셀/CSV 대량등록</button>
+          </div>
+
+          {/* 파일 자동감지 패널 */}
+          {(user?.permissions?.includes('SYSTEM_ADMIN') || user?.permissions?.includes('REQUEST_USE') || user?.permissions?.includes('PURCHASE_MANAGE')) && (
+            <div className="card p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-sm">엑셀 파일 자동감지</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${watcherConfig.is_running ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-slate-500'}`}>
+                  {watcherConfig.is_running ? '감지중' : '중지됨'}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {/* 파일 경로 지정 */}
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">엑셀 파일 경로 (서버 PC 기준)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="input flex-1"
+                      placeholder="예: C:\Users\총무구매\Documents\환자목록.xlsx"
+                      value={watcherConfig.file_path}
+                      onChange={e => setWatcherConfig(p => ({ ...p, file_path: e.target.value }))}
+                    />
+                    {isElectron && (
+                      <button onClick={selectExcelFilePath} className="btn-secondary text-xs whitespace-nowrap">찾아보기</button>
+                    )}
+                  </div>
+                  {watcherConfig.file_path && (
+                    <p className="text-xs text-green-600 mt-1">✓ {watcherConfig.file_path.split(/[\\/]/).pop()}</p>
+                  )}
+                  <p className="text-xs text-slate-400 mt-1">서버가 직접 접근할 수 있는 파일 경로를 입력하세요. 파일 저장 시 자동으로 동기화됩니다.</p>
+                </div>
+                {/* 대상 부서 */}
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">대상 부서</label>
+                  <select
+                    className="input w-full"
+                    value={watcherConfig.dept_id}
+                    onChange={e => setWatcherConfig(p => ({ ...p, dept_id: e.target.value }))}
+                  >
+                    <option value="">자동 (병실번호로 부서 결정)</option>
+                    {wards.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={watcherConfig.enabled}
+                    onChange={e => setWatcherConfig(p => ({ ...p, enabled: e.target.checked }))}
+                  />
+                  자동감지 활성화
+                </label>
+                <button onClick={saveWatcherConfig} disabled={watcherSaving} className="btn-primary text-sm">
+                  {watcherSaving ? '저장 중...' : '저장'}
+                </button>
+              </div>
+              {watcherConfig.last_status && (
+                <div className="text-xs text-slate-500 bg-gray-50 rounded p-2">
+                  {watcherConfig.last_status.error
+                    ? <span className="text-red-600">오류: {watcherConfig.last_status.error}</span>
+                    : <span>
+                        마지막 동기화: {watcherConfig.last_status.synced_at?.slice(0, 19).replace('T', ' ')} —
+                        등록 <strong>{watcherConfig.last_status.created ?? 0}</strong>,
+                        업데이트 <strong>{(watcherConfig.last_status as any).updated ?? 0}</strong>,
+                        퇴원 <strong>{(watcherConfig.last_status as any).discharged ?? 0}</strong>,
+                        사망 <strong>{(watcherConfig.last_status as any).deceased ?? 0}</strong>,
+                        중복 <strong>{watcherConfig.last_status.skipped ?? 0}</strong>,
+                        오류 <strong>{watcherConfig.last_status.errors?.length ?? 0}</strong>
+                      </span>
+                  }
+                </div>
+              )}
+            </div>
+          )}
+          <div className="card p-0 overflow-auto">
+            {loadingPatients ? <div className="py-16 text-center text-sm text-slate-400">로딩 중...</div> : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>차트번호</th><th>이름</th><th>병동</th><th>병실</th><th>자리</th><th>보험</th><th>환자군</th><th>특성화</th><th>기저귀</th><th>상태</th><th>처리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergedPatients.map(r => (
+                    <tr key={r.id}>
+                      <td className="text-xs font-mono">{r.chart_no}</td>
+                      <td>{r.name}</td>
+                      <td className="text-xs">{r.department_name}</td>
+                      <td>{r.room_no}</td>
+                      <td>{r.bed_no ?? '-'}</td>
+                      <td className="text-xs">{toLabel('insurance_type', r.insurance_type)}</td>
+                      <td className="text-xs">{toLabel('patient_group', r.patient_group)}</td>
+                      <td className="text-xs">{(r.specializations || []).map(v => (SPECIALIZATION_OPTIONS.find(o => o.value === v)?.label ?? v)).join(', ') || '-'}</td>
+                      <td className="text-xs">{r.diaper_state ? `${toLabel('diaper_state', r.diaper_state)}${r.diaper_price ? `(${r.diaper_price})` : ''}${r.diaper_start_date ? ` ${r.diaper_start_date.slice(0,10)}~${r.diaper_end_date ? r.diaper_end_date.slice(0,10) : ''}` : ''}` : '-'}</td>
+                      <td><span className={r.status === 'ADMITTED' ? 'badge-green' : r.status === 'DECEASED' ? 'badge-red' : 'badge-gray'}>{r.status}</span></td>
+                      <td>
+                        {r.status === 'ADMITTED' ? (
+                          <div className="flex gap-2">
+                            <button className="btn-secondary text-xs" onClick={() => discharge(r.id)}>퇴원</button>
+                            <button className="btn-danger text-xs" onClick={() => death(r.id)}>사망</button>
+                          </div>
+                        ) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {majorTab === 'board' && (
+        <div className="space-y-3">
+          <div className="card p-3 flex flex-wrap gap-2 items-center">
+            {wardButtons}
+            {!roomEditMode ? (
+              <button onClick={startRoomEdit} className="btn-secondary">병실 설정</button>
+            ) : (
+              <>
+                <button onClick={() => setRoomEditMode(false)} className="btn-secondary">설정 취소</button>
+                <button onClick={saveRoomConfig} disabled={roomSaving} className="btn-primary">
+                  {roomSaving ? '저장 중...' : '병실 설정 저장'}
+                </button>
+              </>
+            )}
+            <input type="date" value={boardDate} onChange={e => setBoardDate(e.target.value)} className="input w-40 ml-auto" />
+            <button onClick={loadBoard} className="btn-secondary">불러오기</button>
+          </div>
+          <div className="card p-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+            <span className="font-semibold text-slate-700">색상범례</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded border border-pink-300 bg-pink-100" />여자</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded border border-blue-300 bg-blue-100" />남자</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded border border-gray-300 bg-white" />빈자리</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded border border-slate-300 bg-slate-100" />미지정</span>
+          </div>
+          {roomEditMode && (
+            <div className="card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-semibold">병실/인실 편집</div>
+                <button onClick={addRoomRow} className="btn-secondary text-xs">+ 병실 추가</button>
+              </div>
+              <div className="overflow-auto">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 80 }}>순서</th>
+                      <th>병실</th>
+                      <th style={{ width: 120 }}>인실</th>
+                      <th style={{ width: 100 }}>삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roomDraftRows.map((row, idx) => (
+                      <tr key={`${row.id ?? 'new'}-${idx}`}>
+                        <td>{idx + 1}</td>
+                        <td>
+                          <input
+                            className="input h-9 text-sm"
+                            placeholder="예: 201호"
+                            value={row.room_no}
+                            onChange={e => setRoomDraftRows(prev => prev.map((r, i) => i === idx ? { ...r, room_no: e.target.value } : r))}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={1}
+                            className="input h-9 text-sm"
+                            value={row.capacity}
+                            onChange={e => setRoomDraftRows(prev => prev.map((r, i) => i === idx ? { ...r, capacity: Math.max(1, Number(e.target.value || 1)) } : r))}
+                          />
+                        </td>
+                        <td>
+                           <button onClick={() => removeRoomRow(idx)} className="btn-danger text-xs">삭제</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">예: 201호 6인실 → 3인실로 변경, 220호는 삭제 후 저장</p>
+            </div>
+          )}
+          {loadingBoard ? <div className="py-16 text-center text-sm text-slate-400">로딩 중...</div> : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {boardRooms.map(room => (
+                <div key={room.id} className="card p-3">
+                  <div className="font-semibold text-sm mb-2">{room.room_no} · {room.capacity}인실</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {room.cells.map(cell => {
+                      const period = extractPeriodFromNote(cell.note);
+                      return (
+                        <button
+                          key={cell.id}
+                          onClick={() => {
+                            const linked = cell.patient_id ? mergedPatients.find(p => p.id === cell.patient_id) : null;
+                            setSelectedCell({
+                              ...cell,
+                              period_start_date: period.start,
+                              period_end_date: period.end,
+                              disease_code_id: linked?.disease_code_id ?? null,
+                              disease_code_registered_at: linked?.disease_code_registered_at ?? null,
+                              disease_code_expires_at: linked?.disease_code_expires_at ?? null,
+                              main_disease_code_id: linked?.main_disease_code_id ?? cell.main_disease_code_id ?? null,
+                              caregiver_type: cell.caregiver_type || '',
+                              guardian_name: cell.guardian_name || linked?.guardian_name || '',
+                              billing_sms_phone: cell.billing_sms_phone || linked?.billing_sms_phone || '',
+                              project_name: cell.project_name || linked?.project_name || '',
+                              project_region: cell.project_region || linked?.project_region || '',
+                              project_sigungu_office: cell.project_sigungu_office || linked?.project_sigungu_office || '',
+                            });
+                          }}
+                          className={`border rounded-lg p-2 text-left transition-colors ${bedCellToneClass(cell)}`}
+                        >
+                          <div className="text-[11px] text-slate-500">{cell.bed_no}번 자리</div>
+                          <div className="text-sm font-semibold truncate">{cell.patient_name || '빈자리'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">차트번호: {cell.chart_no || '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">성별/유형: {cell.gender || '-'} / {toLabel('mobility_type', cell.mobility_type)}</div>
+                          <div className="text-[11px] text-slate-600 truncate">보험/환자군: {toLabel('insurance_type', cell.insurance_type)} / {toLabel('patient_group', cell.patient_group)}</div>
+                          <div className="text-[11px] text-slate-600 truncate">주상병: {diseaseCodeLabelById[cell.main_disease_code_id || ''] || '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">간병유형: {toCaregiverLabel(cell.caregiver_type)}</div>
+                          <div className="text-[11px] text-slate-600 truncate">보호자: {cell.guardian_name || cell.acquaintance || '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">병원비 문자: {cell.billing_sms_phone || '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">사업: {cell.project_name ? `${cell.project_name} / ${cell.project_region || '-'} / ${cell.project_sigungu_office || '-'}` : '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">특성화: {(cell.specializations || []).map(v => (SPECIALIZATION_OPTIONS.find(o => o.value === v)?.label ?? v)).join(', ') || '-'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">감염균주: {toLabel('infection_strain', cell.infection_strain)}</div>
+                          <div className="text-[11px] text-slate-600 truncate">특정기간: {toLabel('period_type', cell.period_type)}</div>
+                          <div className="text-[11px] text-slate-600 truncate">기저귀: {toLabel('diaper_state', cell.diaper_state)}{cell.diaper_price ? ` (${cell.diaper_price.toLocaleString()}원)` : ''}{cell.diaper_start_date ? ` ${cell.diaper_start_date.slice(0,10)}~${cell.diaper_end_date ? cell.diaper_end_date.slice(0,10) : ''}` : ''}</div>
+                          <div className="text-[11px] text-slate-600 truncate">입원전병원: {cell.prev_hospital || '-'}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {majorTab === 'disease' && (
+        <div className="space-y-3">
+          {/* 서브탭 */}
+          <div className="flex border-b border-gray-200">
+            {([{ key: 'reregistration', label: '재등록관리' }, { key: 'codes', label: '코드등록' }] as { key: DiseaseSubTab; label: string }[]).map(t => (
+              <button
+                key={t.key}
+                onClick={() => setDiseaseSubTab(t.key)}
+                className={`px-4 py-2 text-sm border-b-2 ${diseaseSubTab === t.key ? 'border-blue-600 text-blue-700 font-semibold' : 'border-transparent text-slate-500'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 코드등록 */}
+          {diseaseSubTab === 'codes' && (
+            <div className="space-y-3">
+              <div className="card p-3 flex flex-wrap gap-2 items-center">
+                <span className="text-sm font-medium text-slate-700">주상병코드 / V코드 마스터 관리</span>
+                <SelectField value={codeTypeFilter} onChange={v => setCodeTypeFilter(v as any)} options={[{ v: '', l: '전체' }, { v: 'MAIN', l: '주상병' }, { v: 'SEVERE', l: '중증질환' }, { v: 'RARE', l: '희귀난치성' }]} />
+                <button onClick={syncHiraDiseaseCodes} disabled={hiraSyncing} className="btn-secondary ml-auto text-xs">{hiraSyncing ? '동기화 중...' : 'HIRA 전체 동기화'}</button>
+                <button onClick={() => { setEditingCodeId(null); setCodeForm({ code: '', name: '', code_type: 'MAIN' }); setCodeEditOpen(true); }} className="btn-primary">코드 추가</button>
+              </div>
+              <div className="card p-0 overflow-auto">
+                <table className="tbl">
+                  <thead>
+                    <tr><th>코드번호</th><th>질환명</th><th>유형</th><th>상태</th><th>처리</th></tr>
+                  </thead>
+                  <tbody>
+                    {diseaseCodes.filter(c => !codeTypeFilter || c.code_type === codeTypeFilter).map(c => (
+                      <tr key={c.id}>
+                        <td className="font-mono font-semibold">{c.code}</td>
+                        <td>{c.name}</td>
+                        <td>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${c.code_type === 'MAIN' ? 'bg-blue-100 text-blue-700' : c.code_type === 'SEVERE' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>
+                            {CODE_TYPE_LABEL[c.code_type] ?? c.code_type}
+                          </span>
+                        </td>
+                        <td><span className={c.is_active ? 'badge-green' : 'badge-gray'}>{c.is_active ? '활성' : '비활성'}</span></td>
+                        <td>
+                          <div className="flex gap-2">
+                            <button className="btn-secondary text-xs" onClick={() => { setEditingCodeId(c.id); setCodeForm({ code: c.code, name: c.name, code_type: c.code_type }); setCodeEditOpen(true); }}>수정</button>
+                            <button className="btn-danger text-xs" onClick={() => deleteCode(c.id)}>삭제</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {diseaseCodes.filter(c => !codeTypeFilter || c.code_type === codeTypeFilter).length === 0 && (
+                      <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-400">등록된 코드가 없습니다.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 재등록관리 */}
+          {diseaseSubTab === 'reregistration' && (() => {
+            const today = new Date().toISOString().slice(0, 10);
+            const filtered = patientDiseaseRows.filter(r => !regTypeFilter || r.code_type === regTypeFilter);
+            return (
+              <div className="space-y-3">
+                <div className="card p-3 flex flex-wrap gap-2 items-center">
+                  <span className="text-sm font-medium text-slate-700">환자별 V코드 이력</span>
+                  <SelectField value={regTypeFilter} onChange={v => setRegTypeFilter(v as any)} options={[{ v: '', l: '전체' }, { v: 'SEVERE', l: '중증질환' }, { v: 'RARE', l: '희귀난치성' }]} />
+                  <button onClick={loadPatientDiseaseRows} className="btn-secondary">새로고침</button>
+                  <button onClick={() => { setEditingRegId(null); setRegForm({ patient_id: '', disease_code_id: '', registered_at: '', expires_at: '', note: '' }); setRegEditOpen(true); }} className="btn-primary ml-auto">이력 등록</button>
+                </div>
+                <div className="card p-0 overflow-auto">
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>환자번호</th><th>환자명</th><th>병동</th><th>병실</th><th>보험유형</th><th>V코드</th><th>질환명</th><th>유형</th><th>등록일</th><th>만료일</th><th>상태</th><th>처리</th></tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(r => {
+                        const isExpired = r.expires_at && r.expires_at < today;
+                        const isNearExpiry = !isExpired && r.expires_at && r.expires_at <= new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                        return (
+                          <tr key={r.id} className={isExpired ? 'bg-red-50' : isNearExpiry ? 'bg-orange-50' : ''}>
+                            <td className="text-xs font-mono">{r.chart_no}</td>
+                            <td>{r.patient_name}</td>
+                            <td className="text-xs">{r.department_name}</td>
+                            <td className="text-xs">{r.room_no || '-'}</td>
+                            <td className="text-xs">{r.insurance_type === 'HEALTH_REDUCED_SEVERE' ? '중증질환' : r.insurance_type === 'HEALTH_REDUCED_RARE' ? '희귀난치성' : r.insurance_type}</td>
+                            <td className="font-mono font-semibold">{r.code}</td>
+                            <td className="text-xs">{r.name}</td>
+                            <td><span className={`text-xs px-1.5 py-0.5 rounded-full ${r.code_type === 'SEVERE' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>{r.code_type === 'SEVERE' ? '중증' : '희귀'}</span></td>
+                            <td className="text-xs">{r.registered_at}</td>
+                            <td className="text-xs">
+                              <span className={isExpired ? 'text-red-600 font-semibold' : isNearExpiry ? 'text-orange-600 font-semibold' : ''}>{r.expires_at || '-'}</span>
+                              {isExpired && <span className="ml-1 text-red-500 text-xs">[만료]</span>}
+                              {isNearExpiry && <span className="ml-1 text-orange-500 text-xs">[임박]</span>}
+                            </td>
+                            <td><span className={r.is_active ? 'badge-green' : 'badge-gray'}>{r.is_active ? '유효' : '비활성'}</span></td>
+                            <td>
+                              <div className="flex gap-2">
+                                <button className="btn-secondary text-xs" onClick={() => { setEditingRegId(r.id); setRegForm({ patient_id: r.patient_id, disease_code_id: r.disease_code_id, registered_at: r.registered_at, expires_at: r.expires_at ?? '', note: r.note }); setRegEditOpen(true); }}>수정</button>
+                                <button className="btn-danger text-xs" onClick={() => deleteReg(r.id)}>삭제</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filtered.length === 0 && (
+                        <tr><td colSpan={12} className="py-8 text-center text-sm text-slate-400">등록된 이력이 없습니다.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {selectedCell && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setSelectedCell(null); }}>
+          <div className="modal w-full max-w-2xl">
+            <div className="modal-header"><h2 className="modal-title">{selectedCell.room_no} {selectedCell.bed_no}번 편집</h2><button className="text-xl text-slate-400" onClick={() => setSelectedCell(null)}>&times;</button></div>
+            <div className="modal-body grid md:grid-cols-2 gap-3">
+              <input className="input" value={selectedCell.patient_name} onChange={e => setSelectedCell({ ...selectedCell, patient_name: e.target.value })} placeholder="성명" />
+              <input className="input" value={selectedCell.chart_no} onChange={e => setSelectedCell({ ...selectedCell, chart_no: e.target.value, patient_no: e.target.value })} placeholder="차트번호" />
+              <SelectField value={selectedCell.gender} onChange={v => setSelectedCell({ ...selectedCell, gender: v })} options={[{ v: 'F', l: '여' }, { v: 'M', l: '남' }]} />
+              <SelectField value={selectedCell.mobility_type} onChange={v => setSelectedCell({ ...selectedCell, mobility_type: v })} options={[{ v: 'BEDRIDDEN', l: '와상' }, { v: 'AMBULATORY', l: '거동' }]} />
+              <GroupedSelectField value={selectedCell.insurance_type} onChange={v => setSelectedCell({ ...selectedCell, insurance_type: v, ...(v !== 'HEALTH_REDUCED_SEVERE' && v !== 'HEALTH_REDUCED_RARE' ? { disease_code_id: null, disease_code_registered_at: null, disease_code_expires_at: null } : {}) })} groups={INSURANCE_GROUPS} />
+              <SelectField value={selectedCell.patient_group} onChange={v => setSelectedCell({ ...selectedCell, patient_group: v })} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} />
+              <SelectField
+                value={selectedCell.main_disease_code_id || ''}
+                onChange={v => setSelectedCell({ ...selectedCell, main_disease_code_id: v || null })}
+                options={[
+                  { v: '', l: '주상병코드 선택' },
+                  ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
+                ]}
+              />
+              <SelectField value={selectedCell.caregiver_type || ''} onChange={v => setSelectedCell({ ...selectedCell, caregiver_type: v })} options={CAREGIVER_OPTIONS} />
+              <input className="input" value={selectedCell.guardian_name || ''} onChange={e => setSelectedCell({ ...selectedCell, guardian_name: e.target.value })} placeholder="보호자" />
+              <input className="input" value={selectedCell.billing_sms_phone || ''} onChange={e => setSelectedCell({ ...selectedCell, billing_sms_phone: e.target.value })} placeholder="병원비 문자 수신번호" />
+              <input className="input md:col-span-2" value={selectedCell.project_name || ''} onChange={e => setSelectedCell({ ...selectedCell, project_name: e.target.value })} placeholder="사업명칭" />
+              <input className="input" value={selectedCell.project_region || ''} onChange={e => setSelectedCell({ ...selectedCell, project_region: e.target.value })} placeholder="지역" />
+              <input className="input" value={selectedCell.project_sigungu_office || ''} onChange={e => setSelectedCell({ ...selectedCell, project_sigungu_office: e.target.value })} placeholder="시/군/구청" />
+              {(selectedCell.insurance_type === 'HEALTH_REDUCED_SEVERE' || selectedCell.insurance_type === 'HEALTH_REDUCED_RARE') && (
+                <div className="md:col-span-2 border border-blue-200 rounded-lg p-2 bg-blue-50 grid md:grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">V코드 (산정특례)</p>
+                    <SelectField
+                      value={selectedCell.disease_code_id || ''}
+                      onChange={v => setSelectedCell({ ...selectedCell, disease_code_id: v || null })}
+                      options={[
+                        { v: '', l: 'V코드 선택' },
+                        ...diseaseCodes
+                          .filter(c => c.is_active && c.code_type === (selectedCell.insurance_type === 'HEALTH_REDUCED_SEVERE' ? 'SEVERE' : 'RARE'))
+                          .map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">등록일</p>
+                    <input type="date" className="input" value={selectedCell.disease_code_registered_at || ''} onChange={e => {
+                      const val = e.target.value;
+                      const next: any = { ...selectedCell, disease_code_registered_at: val || null };
+                      if (val && !selectedCell.disease_code_expires_at) {
+                        const d = new Date(val + 'T00:00:00'); d.setFullYear(d.getFullYear() + 5);
+                        next.disease_code_expires_at = d.toISOString().slice(0, 10);
+                      }
+                      setSelectedCell(next);
+                    }} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">만료일</p>
+                    <input type="date" className="input" value={selectedCell.disease_code_expires_at || ''} onChange={e => setSelectedCell({ ...selectedCell, disease_code_expires_at: e.target.value || null })} />
+                  </div>
+                </div>
+              )}
+              <div className="md:col-span-2 border rounded-lg p-2">
+                <p className="text-xs text-slate-500 mb-2">특성화 (중복 선택)</p>
+                <div className="flex gap-2 flex-wrap">
+                  {SPECIALIZATION_OPTIONS.map(opt => (
+                    <button key={opt.value} type="button" onClick={() => {
+                      const cur = new Set<string>(selectedCell.specializations || []);
+                      if (cur.has(opt.value)) cur.delete(opt.value); else cur.add(opt.value);
+                      const newSpecs = Array.from(cur);
+                      setSelectedCell({
+                        ...selectedCell,
+                        specializations: newSpecs,
+                        ...(opt.value === 'INFECT' && !cur.has('INFECT') ? { infection_strain: '' } : {}),
+                      });
+                    }} className={`px-3 py-1 text-xs rounded-full border ${(selectedCell.specializations || []).includes(opt.value) ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-gray-200'}`}>{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+              <SelectField value={selectedCell.infection_strain} onChange={v => setSelectedCell({ ...selectedCell, infection_strain: v })} options={[{ v: '', l: '감염균주 없음' }, { v: 'CRE', l: 'CRE' }, { v: 'VRE', l: 'VRE' }, { v: 'MR', l: 'MR' }]} disabled={!(selectedCell.specializations || []).includes('INFECT')} />
+              <SelectField value={selectedCell.period_type} onChange={v => setSelectedCell({ ...selectedCell, period_type: v, ...(v ? {} : { period_start_date: '', period_end_date: '' }) })} options={[{ v: '', l: '특정기간 없음' }, { v: 'PNEUMONIA', l: '폐렴' }, { v: 'SEPSIS', l: '패혈증' }]} />
+              {selectedCell.period_type ? (
+                <>
+                  <input type="date" className="input" value={selectedCell.period_start_date || ''} onChange={e => setSelectedCell({ ...selectedCell, period_start_date: e.target.value })} />
+                  <input type="date" className="input" value={selectedCell.period_end_date || ''} onChange={e => setSelectedCell({ ...selectedCell, period_end_date: e.target.value })} />
+                </>
+              ) : (
+                <>
+                  <div />
+                  <div />
+                </>
+              )}
+              <SelectField
+                value={selectedCell.diaper_state || 'NONE'}
+                onChange={v => setSelectedCell({ ...selectedCell, diaper_state: v, ...(v === 'IN_HOUSE' ? {} : { diaper_price: 0 }) })}
+                options={[{ v: 'NONE', l: '미사용' }, { v: 'IN_HOUSE', l: '원내' }, { v: 'PERSONAL', l: '본인' }]}
+              />
+              <input
+                type="number"
+                className="input"
+                placeholder="기저귀 금액(원내만)"
+                disabled={selectedCell.diaper_state !== 'IN_HOUSE'}
+                value={selectedCell.diaper_state === 'IN_HOUSE' ? (selectedCell.diaper_price ?? '') : 0}
+                onChange={e => setSelectedCell({ ...selectedCell, diaper_price: e.target.value ? Number(e.target.value) : 0 })}
+              />
+              <div className="flex gap-2 items-center col-span-2">
+                <label className="text-xs text-slate-500 whitespace-nowrap">기저귀 사용기간</label>
+                <input type="date" className="input flex-1" value={selectedCell.diaper_start_date || ''} onChange={e => setSelectedCell({ ...selectedCell, diaper_start_date: e.target.value })} />
+                <span className="text-xs text-slate-400">~</span>
+                <input type="date" className="input flex-1" value={selectedCell.diaper_end_date || ''} onChange={e => setSelectedCell({ ...selectedCell, diaper_end_date: e.target.value })} />
+              </div>
+              <input className="input" list="hospital-options" value={selectedCell.prev_hospital} onChange={e => setSelectedCell({ ...selectedCell, prev_hospital: e.target.value })} placeholder="입원전병원" />
+              <div className="flex gap-2 items-center">
+                <input
+                  className="input flex-1"
+                  value={newHospitalName}
+                  onChange={e => setNewHospitalName(e.target.value)}
+                  placeholder="병원 신규 등록"
+                />
+                <button type="button" className="btn-secondary whitespace-nowrap" onClick={addHospital}>병원 등록</button>
+              </div>
+              <div className="flex gap-2"><input className="input flex-1" value={selectedCell.acquaintance} onChange={e => setSelectedCell({ ...selectedCell, acquaintance: e.target.value })} placeholder="지인 정보" /><input type="color" value={selectedCell.acquaintance_color || '#0ea5e9'} onChange={e => setSelectedCell({ ...selectedCell, acquaintance_color: e.target.value })} /></div>
+              <input className="input" value={selectedCell.address || ''} onChange={e => setSelectedCell({ ...selectedCell, address: e.target.value })} placeholder="거주지" />
+              <select className="input" value={selectedCell.referral_source || ''} onChange={e => setSelectedCell({ ...selectedCell, referral_source: e.target.value })}>
+                <option value="">유입경로 선택</option>
+                {['SNS', '인근거주', '장기요양기관', '소개', '진료협력센터', '입원전병원', '재입원', '기타'].map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+
+              {/* 처치 항목 섹션 */}
+              {selectedCell.patient_id && (
+                <div className="md:col-span-2 border rounded-lg p-2 bg-amber-50 border-amber-200">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between text-xs font-semibold text-amber-700"
+                    onClick={() => {
+                      if (!treatmentOpen) {
+                        loadPatientTreatments(selectedCell.patient_id!);
+                      }
+                      setTreatmentOpen(!treatmentOpen);
+                    }}
+                  >
+                    <span>처치 항목 관리</span>
+                    <span className="text-lg leading-none">{treatmentOpen ? '−' : '+'}</span>
+                  </button>
+                  {treatmentOpen && (
+                    <div className="mt-2 space-y-2">
+                      {patientTreatments.length > 0 ? (
+                        <div className="space-y-1">
+                          {patientTreatments.map((pt: any) => (
+                            <div key={pt.id} className="flex items-center justify-between bg-white rounded px-2 py-1 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${pt.ended_at ? 'bg-gray-300' : 'bg-green-400'}`} />
+                                <span className={pt.ended_at ? 'text-slate-400 line-through' : 'font-medium'}>
+                                  {pt.treatment_type?.name || '알 수 없음'}
+                                </span>
+                                {pt.treatment_type?.category && (
+                                  <span className="px-1 py-0.5 bg-blue-100 text-blue-600 rounded text-[9px]">{pt.treatment_type.category}</span>
+                                )}
+                                <span className="text-slate-400">
+                                  {new Date(pt.started_at).toLocaleDateString()} ~
+                                  {pt.ended_at ? ` ${new Date(pt.ended_at).toLocaleDateString()}` : ''}
+                                </span>
+                              </div>
+                              <div className="flex gap-1">
+                                {!pt.ended_at && (
+                                  <button
+                                    type="button"
+                                    onClick={() => endPatientTreatment(pt.id, selectedCell.patient_id!)}
+                                    className="px-1.5 py-0.5 text-orange-600 hover:bg-orange-100 rounded text-[10px]"
+                                  >
+                                    종료
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => deletePatientTreatment(pt.id, selectedCell.patient_id!)}
+                                  className="px-1.5 py-0.5 text-red-500 hover:bg-red-100 rounded text-[10px]"
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">등록된 처치 항목이 없습니다.</p>
+                      )}
+                      <div className="flex gap-2 items-center pt-1 border-t border-amber-200">
+                        <select
+                          value={addTreatmentId}
+                          onChange={e => setAddTreatmentId(e.target.value)}
+                          className="flex-1 border rounded px-2 py-1 text-xs"
+                        >
+                          <option value="">처치 유형 선택</option>
+                          {treatmentTypes.map(tt => (
+                            <option key={tt.id} value={tt.id}>
+                              {tt.name} {tt.category ? `(${tt.category})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => addPatientTreatment(selectedCell.patient_id!)}
+                          disabled={!addTreatmentId}
+                          className="px-2 py-1 bg-amber-600 text-white rounded text-xs hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          추가
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer flex-wrap gap-2">
+              <button className="btn-secondary" onClick={() => setSelectedCell(null)}>취소</button>
+              {!selectedCell.patient_id && (
+                <button className="btn-primary" onClick={admitFromBoard}>입원 등록</button>
+              )}
+              {selectedCell.patient_id && selectedCell.patient_name?.trim() && (
+                <button
+                  className="btn-secondary"
+                  onClick={() => { setTransferWardId(''); setTransferMemo(''); setTransferOpen(true); }}
+                >
+                  병동 이동
+                </button>
+              )}
+              {selectedCell.patient_name?.trim() && (
+                <>
+                  <select className="input text-xs w-28" value={selectedCell.discharge_type || ''} onChange={e => setSelectedCell({ ...selectedCell, discharge_type: e.target.value })}>
+                    <option value="">퇴원유형</option>
+                    {['자택', '장기요양기관', '급성기병원', '타요양병원', '기타'].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <button className="btn-secondary" onClick={dischargeFromBoard}>퇴원 처리</button>
+                  <button className="btn-danger" onClick={deathFromBoard}>사망 처리</button>
+                </>
+              )}
+              <button className="btn-primary" disabled={savingCell} onClick={saveCell}>{savingCell ? '저장 중...' : '저장'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transferOpen && selectedCell?.patient_id && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setTransferOpen(false); }}>
+          <div className="modal w-full max-w-sm">
+            <div className="modal-header">
+              <h2 className="modal-title">병동 이동 — {selectedCell.patient_name}</h2>
+              <button className="text-xl text-slate-400" onClick={() => setTransferOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body space-y-3">
+              <div>
+                <label className="label">이동할 병동</label>
+                <select
+                  className="input"
+                  value={transferWardId}
+                  onChange={e => {
+                    setTransferWardId(e.target.value);
+                    setTransferRoomNo('');
+                    setTransferBedNo(null);
+                    loadTransferRooms(e.target.value);
+                  }}
+                >
+                  <option value="">병동 선택</option>
+                  {wards.filter(w => w.id !== wardId).map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+              {transferWardId && transferRooms.length > 0 && (
+                <div>
+                  <label className="label">병실</label>
+                  <select
+                    className="input"
+                    value={transferRoomNo}
+                    onChange={e => { setTransferRoomNo(e.target.value); setTransferBedNo(null); }}
+                  >
+                    <option value="">병실 선택 (선택)</option>
+                    {transferRooms.map(r => (
+                      <option key={r.id} value={r.room_no}>{r.room_no}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {transferRoomNo && (() => {
+                const room = transferRooms.find(r => r.room_no === transferRoomNo);
+                if (!room) return null;
+                const occupiedBeds = new Set(
+                  transferBoard
+                    .filter((c: any) => c.ward_room_id === room.id && c.patient_name)
+                    .map((c: any) => c.bed_no)
+                );
+                return (
+                  <div>
+                    <label className="label">자리</label>
+                    <select
+                      className="input"
+                      value={transferBedNo ?? ''}
+                      onChange={e => setTransferBedNo(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">자리 선택 (선택)</option>
+                      {Array.from({ length: room.capacity }, (_, i) => i + 1).map(bed => (
+                        <option key={bed} value={bed} disabled={occupiedBeds.has(bed)}>
+                          {bed}번{occupiedBeds.has(bed) ? ' (사용중)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+              <div>
+                <label className="label">메모 (선택)</label>
+                <input
+                  className="input"
+                  value={transferMemo}
+                  onChange={e => setTransferMemo(e.target.value)}
+                  placeholder="이동 사유 등"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setTransferOpen(false)}>취소</button>
+              <button
+                className="btn-primary"
+                disabled={!transferWardId || transferring}
+                onClick={handleTransfer}
+              >
+                {transferring ? '처리 중...' : '이동 확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {listAdmitOpen && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setListAdmitOpen(false); }}>
+          <div className="modal w-full max-w-3xl">
+            <div className="modal-header">
+              <h2 className="modal-title">입원 등록</h2>
+              <button className="text-xl text-slate-400" onClick={() => setListAdmitOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body grid md:grid-cols-3 gap-3">
+              <SelectField value={listAdmitForm.department_id} onChange={v => setListAdmitForm(p => ({ ...p, department_id: v }))} options={[{ v: '', l: '병동 선택' }, ...wards.map(w => ({ v: w.id, l: w.name }))]} />
+              <input className="input" placeholder="병실 (예: 201호)" value={listAdmitForm.room_no} onChange={e => setListAdmitForm(p => ({ ...p, room_no: e.target.value }))} />
+              <input className="input" placeholder="자리 번호" value={listAdmitForm.bed_no} onChange={e => setListAdmitForm(p => ({ ...p, bed_no: e.target.value }))} />
+              <input className="input" placeholder="차트번호" value={listAdmitForm.chart_no} onChange={e => setListAdmitForm(p => ({ ...p, chart_no: e.target.value }))} />
+              <input className="input" placeholder="이름" value={listAdmitForm.name} onChange={e => setListAdmitForm(p => ({ ...p, name: e.target.value }))} />
+              <SelectField value={listAdmitForm.mobility_type} onChange={v => setListAdmitForm(p => ({ ...p, mobility_type: v }))} options={[{ v: 'BEDRIDDEN', l: '와상' }, { v: 'AMBULATORY', l: '거동' }]} />
+              <GroupedSelectField value={listAdmitForm.insurance_type} onChange={v => setListAdmitForm(p => ({ ...p, insurance_type: v, ...(v !== 'HEALTH_REDUCED_SEVERE' && v !== 'HEALTH_REDUCED_RARE' ? { disease_code_id: '', disease_code_registered_at: '', disease_code_expires_at: '' } : {}) }))} groups={INSURANCE_GROUPS} />
+              <SelectField value={listAdmitForm.patient_group} onChange={v => setListAdmitForm(p => ({ ...p, patient_group: v }))} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} />
+              <SelectField
+                value={listAdmitForm.main_disease_code_id}
+                onChange={v => setListAdmitForm(p => ({ ...p, main_disease_code_id: v }))}
+                options={[
+                  { v: '', l: '주상병코드 선택' },
+                  ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
+                ]}
+              />
+              <SelectField value={listAdmitForm.caregiver_type} onChange={v => setListAdmitForm(p => ({ ...p, caregiver_type: v }))} options={CAREGIVER_OPTIONS} />
+              <input className="input" placeholder="보호자" value={listAdmitForm.guardian_name} onChange={e => setListAdmitForm(p => ({ ...p, guardian_name: e.target.value }))} />
+              <input className="input" placeholder="병원비 문자 수신번호" value={listAdmitForm.billing_sms_phone} onChange={e => setListAdmitForm(p => ({ ...p, billing_sms_phone: e.target.value }))} />
+              <input className="input md:col-span-3" placeholder="사업명칭" value={listAdmitForm.project_name} onChange={e => setListAdmitForm(p => ({ ...p, project_name: e.target.value }))} />
+              <input className="input" placeholder="지역" value={listAdmitForm.project_region} onChange={e => setListAdmitForm(p => ({ ...p, project_region: e.target.value }))} />
+              <input className="input" placeholder="시/군/구청" value={listAdmitForm.project_sigungu_office} onChange={e => setListAdmitForm(p => ({ ...p, project_sigungu_office: e.target.value }))} />
+              {(listAdmitForm.insurance_type === 'HEALTH_REDUCED_SEVERE' || listAdmitForm.insurance_type === 'HEALTH_REDUCED_RARE') && (
+                <div className="md:col-span-3 border border-blue-200 rounded-lg p-2 bg-blue-50 grid md:grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">V코드 (산정특례)</p>
+                    <SelectField
+                      value={listAdmitForm.disease_code_id}
+                      onChange={v => setListAdmitForm(p => ({ ...p, disease_code_id: v }))}
+                      options={[
+                        { v: '', l: 'V코드 선택' },
+                        ...diseaseCodes
+                          .filter(c => c.is_active && c.code_type === (listAdmitForm.insurance_type === 'HEALTH_REDUCED_SEVERE' ? 'SEVERE' : 'RARE'))
+                          .map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">등록일</p>
+                    <input type="date" className="input" value={listAdmitForm.disease_code_registered_at} onChange={e => {
+                      const val = e.target.value;
+                      const update: any = { disease_code_registered_at: val };
+                      if (val && !listAdmitForm.disease_code_expires_at) {
+                        const d = new Date(val + 'T00:00:00'); d.setFullYear(d.getFullYear() + 5);
+                        update.disease_code_expires_at = d.toISOString().slice(0, 10);
+                      }
+                      setListAdmitForm(p => ({ ...p, ...update }));
+                    }} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 mb-1 font-medium">만료일</p>
+                    <input type="date" className="input" value={listAdmitForm.disease_code_expires_at} onChange={e => setListAdmitForm(p => ({ ...p, disease_code_expires_at: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+              <div className="md:col-span-3 border rounded-lg p-2">
+                <p className="text-xs text-slate-500 mb-2">특성화 (중복 선택)</p>
+                <div className="flex gap-2 flex-wrap">
+                  {SPECIALIZATION_OPTIONS.map(opt => (
+                    <button key={opt.value} type="button" onClick={() => {
+                      const cur = new Set<string>(listAdmitForm.specializations || []);
+                      if (cur.has(opt.value)) cur.delete(opt.value); else cur.add(opt.value);
+                      const newSpecs = Array.from(cur);
+                      setListAdmitForm(p => ({
+                        ...p,
+                        specializations: newSpecs,
+                        ...(opt.value === 'INFECT' && !cur.has('INFECT') ? { infection_strain: '' } : {}),
+                      }));
+                    }} className={`px-3 py-1 text-xs rounded-full border ${(listAdmitForm.specializations || []).includes(opt.value) ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-gray-200'}`}>{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+              <SelectField value={listAdmitForm.infection_strain} onChange={v => setListAdmitForm(p => ({ ...p, infection_strain: v }))} options={[{ v: '', l: '감염균주 없음' }, { v: 'CRE', l: 'CRE' }, { v: 'VRE', l: 'VRE' }, { v: 'MR', l: 'MR' }]} disabled={!(listAdmitForm.specializations || []).includes('INFECT')} />
+              <SelectField value={listAdmitForm.period_type} onChange={v => setListAdmitForm(p => ({ ...p, period_type: v, ...(v ? {} : { period_start_date: '', period_end_date: '' }) }))} options={[{ v: '', l: '특정기간 없음' }, { v: 'PNEUMONIA', l: '폐렴' }, { v: 'SEPSIS', l: '패혈증' }]} />
+              {listAdmitForm.period_type ? (
+                <>
+                  <input type="date" className="input" value={listAdmitForm.period_start_date} onChange={e => setListAdmitForm(p => ({ ...p, period_start_date: e.target.value }))} />
+                  <input type="date" className="input" value={listAdmitForm.period_end_date} onChange={e => setListAdmitForm(p => ({ ...p, period_end_date: e.target.value }))} />
+                </>
+              ) : (<><div /><div /></>)}
+              <SelectField
+                value={listAdmitForm.diaper_state || 'NONE'}
+                onChange={v => setListAdmitForm(p => ({ ...p, diaper_state: v, ...(v === 'IN_HOUSE' ? {} : { diaper_price: '0' }) }))}
+                options={[{ v: 'NONE', l: '미사용' }, { v: 'IN_HOUSE', l: '원내' }, { v: 'PERSONAL', l: '본인' }]}
+              />
+              <input
+                className="input"
+                placeholder="기저귀 금액(원내만)"
+                disabled={listAdmitForm.diaper_state !== 'IN_HOUSE'}
+                value={listAdmitForm.diaper_state === 'IN_HOUSE' ? listAdmitForm.diaper_price : '0'}
+                onChange={e => setListAdmitForm(p => ({ ...p, diaper_price: e.target.value }))}
+              />
+              <div className="flex gap-2 items-center md:col-span-2">
+                <label className="text-xs text-slate-500 whitespace-nowrap">기저귀 사용기간</label>
+                <input type="date" className="input flex-1" value={listAdmitForm.diaper_start_date || ''} onChange={e => setListAdmitForm(p => ({ ...p, diaper_start_date: e.target.value }))} />
+                <span className="text-xs text-slate-400">~</span>
+                <input type="date" className="input flex-1" value={listAdmitForm.diaper_end_date || ''} onChange={e => setListAdmitForm(p => ({ ...p, diaper_end_date: e.target.value }))} />
+              </div>
+              <input className="input" list="hospital-options" placeholder="입원전병원" value={listAdmitForm.prev_hospital} onChange={e => setListAdmitForm(p => ({ ...p, prev_hospital: e.target.value }))} />
+              <div className="flex gap-2 items-center md:col-span-3">
+                <input
+                  className="input flex-1"
+                  value={newHospitalName}
+                  onChange={e => setNewHospitalName(e.target.value)}
+                  placeholder="병원 신규 등록"
+                />
+                <button type="button" className="btn-secondary whitespace-nowrap" onClick={addHospital}>병원 등록</button>
+              </div>
+              <input className="input" value={listAdmitForm.address || ''} onChange={e => setListAdmitForm(p => ({ ...p, address: e.target.value }))} placeholder="거주지" />
+              <select className="input" value={listAdmitForm.referral_source || ''} onChange={e => setListAdmitForm(p => ({ ...p, referral_source: e.target.value }))}>
+                <option value="">유입경로 선택</option>
+                {['SNS', '인근거주', '장기요양기관', '소개', '진료협력센터', '입원전병원', '재입원', '기타'].map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setListAdmitOpen(false)}>취소</button>
+              <button className="btn-primary" disabled={admitLoading} onClick={admitFromList}>{admitLoading ? '처리 중...' : '입원 등록'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <datalist id="hospital-options">
+        {hospitals.map(h => <option key={h.id} value={h.name} />)}
+      </datalist>
+
+      {/* 주상병/V코드 마스터 추가/편집 모달 */}
+      {codeEditOpen && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setCodeEditOpen(false); }}>
+          <div className="modal w-full max-w-md">
+            <div className="modal-header">
+              <h2 className="modal-title">{editingCodeId ? '코드 수정' : '코드 추가'}</h2>
+              <button className="text-xl text-slate-400" onClick={() => setCodeEditOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body grid gap-3">
+              <div className="flex justify-end">
+                <button type="button" onClick={() => { setHiraCodeSearch(codeForm.name || codeForm.code); setHiraCodeResults([]); setHiraCodeTotal(0); setHiraCodeModal(true); }} className="btn-secondary text-xs">
+                  HIRA 질병코드 검색
+                </button>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">코드번호 (예: M001, V001)</label>
+                <input className="input" placeholder="M001 또는 V001" value={codeForm.code} onChange={e => setCodeForm(p => ({ ...p, code: e.target.value.toUpperCase() }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">질환명</label>
+                <input className="input" placeholder="질환명 입력" value={codeForm.name} onChange={e => setCodeForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">유형</label>
+                <SelectField value={codeForm.code_type} onChange={v => setCodeForm(p => ({ ...p, code_type: v as any }))} options={[{ v: 'MAIN', l: '주상병코드' }, { v: 'SEVERE', l: '중증질환 (본인부담경감)' }, { v: 'RARE', l: '희귀난치성 (본인부담경감)' }]} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setCodeEditOpen(false)}>취소</button>
+              <button className="btn-primary" disabled={codeSaving} onClick={saveCode}>{codeSaving ? '저장 중...' : '저장'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 재등록 이력 추가/편집 모달 */}
+      {regEditOpen && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setRegEditOpen(false); }}>
+          <div className="modal w-full max-w-lg">
+            <div className="modal-header">
+              <h2 className="modal-title">{editingRegId ? 'V코드 이력 수정' : 'V코드 이력 등록'}</h2>
+              <button className="text-xl text-slate-400" onClick={() => setRegEditOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body grid gap-3">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">환자 선택</label>
+                <select
+                  className="input h-10 text-sm"
+                  value={regForm.patient_id}
+                  onChange={e => setRegForm(p => ({ ...p, patient_id: e.target.value }))}
+                >
+                  <option value="">환자 선택</option>
+                  {mergedPatients.filter(p => p.status === 'ADMITTED').map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.chart_no}) - {p.department_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">V코드</label>
+                <select
+                  className="input h-10 text-sm"
+                  value={regForm.disease_code_id}
+                  onChange={e => setRegForm(p => ({ ...p, disease_code_id: e.target.value }))}
+                >
+                  <option value="">V코드 선택</option>
+                  {diseaseCodes.filter(c => c.is_active && (c.code_type === 'SEVERE' || c.code_type === 'RARE')).map(c => (
+                    <option key={c.id} value={c.id}>{c.code} {c.name} ({c.code_type === 'SEVERE' ? '중증' : '희귀'})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">등록일</label>
+                  <input type="date" className="input" value={regForm.registered_at} onChange={e => {
+                    const val = e.target.value;
+                    const update: any = { registered_at: val };
+                    if (val && !regForm.expires_at) {
+                      const d = new Date(val + 'T00:00:00'); d.setFullYear(d.getFullYear() + 5);
+                      update.expires_at = d.toISOString().slice(0, 10);
+                    }
+                    setRegForm(p => ({ ...p, ...update }));
+                  }} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">만료일</label>
+                  <input type="date" className="input" value={regForm.expires_at} onChange={e => setRegForm(p => ({ ...p, expires_at: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">메모</label>
+                <input className="input" placeholder="메모 (선택)" value={regForm.note} onChange={e => setRegForm(p => ({ ...p, note: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setRegEditOpen(false)}>취소</button>
+              <button className="btn-primary" disabled={regSaving} onClick={saveReg}>{regSaving ? '저장 중...' : '저장'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HIRA 질병코드 검색 모달 */}
+      {hiraCodeModal && (
+        <div className="modal-backdrop" style={{ zIndex: 60 }} onClick={e => { if (e.target === e.currentTarget) setHiraCodeModal(false); }}>
+          <div className="modal w-full max-w-2xl">
+            <div className="modal-header">
+              <h2 className="modal-title">HIRA 질병코드 검색</h2>
+              <button onClick={() => setHiraCodeModal(false)} className="text-slate-400 text-xl">&times;</button>
+            </div>
+            <div className="modal-body">
+              <div className="flex gap-2 mb-4">
+                <select value={hiraSearchType} onChange={e => setHiraSearchType(e.target.value as any)} className="input w-28">
+                  <option value="SICK_NM">질병명</option>
+                  <option value="SICK_CD">코드</option>
+                </select>
+                <input
+                  value={hiraCodeSearch}
+                  onChange={e => setHiraCodeSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') searchHiraCode(1); }}
+                  className="input flex-1"
+                  placeholder={hiraSearchType === 'SICK_NM' ? '질병명 검색 (예: 당뇨, 폐렴)' : '질병코드 검색 (예: E11, J18)'}
+                  autoFocus
+                />
+                <button onClick={() => searchHiraCode(1)} disabled={hiraCodeLoading || !hiraCodeSearch.trim()} className="btn-primary text-sm px-5">
+                  {hiraCodeLoading ? '검색 중...' : '검색'}
+                </button>
+              </div>
+
+              {hiraCodeResults.length > 0 && (
+                <>
+                  <p className="text-xs text-slate-500 mb-2">총 {hiraCodeTotal.toLocaleString()}건 (페이지 {hiraCodePage}/{Math.ceil(hiraCodeTotal / 20)})</p>
+                  <div className="overflow-x-auto border rounded-lg" style={{ maxHeight: 360 }}>
+                    <table className="tbl text-xs">
+                      <thead><tr><th>코드</th><th>질병명</th><th>영문명</th><th></th></tr></thead>
+                      <tbody>
+                        {hiraCodeResults.map((it, i) => (
+                          <tr key={i} className="hover:bg-blue-50 cursor-pointer" onClick={() => selectHiraCode(it)}>
+                            <td className="font-mono font-medium">{it.sickCd}</td>
+                            <td>{it.sickNm}</td>
+                            <td className="text-slate-400 max-w-[200px] truncate" title={it.sickEngNm}>{it.sickEngNm || '-'}</td>
+                            <td><button className="text-xs text-accent-600 hover:underline" onClick={e => { e.stopPropagation(); selectHiraCode(it); }}>선택</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {hiraCodeTotal > 20 && (
+                    <div className="flex justify-center gap-3 mt-3">
+                      <button onClick={() => searchHiraCode(hiraCodePage - 1)} disabled={hiraCodePage <= 1 || hiraCodeLoading} className="btn-secondary text-xs">이전</button>
+                      <button onClick={() => searchHiraCode(hiraCodePage + 1)} disabled={hiraCodePage >= Math.ceil(hiraCodeTotal / 20) || hiraCodeLoading} className="btn-secondary text-xs">다음</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!hiraCodeLoading && hiraCodeResults.length === 0 && hiraCodeTotal === 0 && hiraCodeSearch && (
+                <p className="text-center text-slate-400 text-sm py-8">검색 결과가 없습니다.</p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setHiraCodeModal(false)} className="btn-secondary">닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 대량등록 모달 */}
+      {bulkModalOpen && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeBulkModal(); }}>
+          <div className="modal w-full max-w-2xl">
+            <div className="modal-header">
+              <h2 className="modal-title">엑셀/CSV 대량등록</h2>
+              <button className="text-xl text-slate-400" onClick={closeBulkModal}>&times;</button>
+            </div>
+
+            {/* 단계 표시 */}
+            <div className="flex gap-2 mb-4 text-xs px-4 pt-2">
+              {(['파일 선택', '미리보기', '결과'] as const).map((label, idx) => (
+                <span key={idx} className={`px-2.5 py-1 rounded-full font-medium ${bulkStep === idx + 1 ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>
+                  {idx + 1}. {label}
+                </span>
+              ))}
+            </div>
+
+            <div className="modal-body">
+              {/* Step 1: 파일 선택 */}
+              {bulkStep === 1 && (
+                <div>
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${bulkDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'}`}
+                    onDragOver={e => { e.preventDefault(); setBulkDragOver(true); }}
+                    onDragLeave={() => setBulkDragOver(false)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      setBulkDragOver(false);
+                      const file = e.dataTransfer.files[0];
+                      if (file) handleBulkFileSelect(file);
+                    }}
+                    onClick={() => document.getElementById('bulk-file-input')?.click()}
+                  >
+                    {bulkPreviewing ? (
+                      <p className="text-sm text-slate-500">파일 분석 중...</p>
+                    ) : (
+                      <>
+                        <p className="text-4xl mb-3">📂</p>
+                        <p className="text-sm font-medium text-slate-700">파일을 여기에 끌어다 놓거나 클릭하여 선택하세요</p>
+                        <p className="text-xs text-slate-400 mt-1">.xlsx, .xls, .csv 지원</p>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    id="bulk-file-input"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) handleBulkFileSelect(file);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <div className="flex justify-between items-center mt-3">
+                    <button onClick={downloadPatientTemplate} className="btn-secondary text-xs">양식 다운로드 (.xlsx)</button>
+                    <button onClick={closeBulkModal} className="btn-secondary">취소</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: 미리보기 */}
+              {bulkStep === 2 && bulkPreview && (
+                <div>
+                  <div className="mb-3 p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-slate-500 mb-1.5">
+                      {bulkPreview.is_header_mode ? '✓ 헤더 기반 자동 매핑' : '기본 16컬럼 순서 형식'}
+                      {' — '}
+                      총 <strong>{bulkPreview.total}</strong>행 감지
+                    </p>
+                    {bulkPreview.is_header_mode && (
+                      <div className="flex flex-wrap gap-1">
+                        {bulkPreview.recognized.map(h => (
+                          <span key={h} className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">{h} ✓</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mb-1">미리보기 (최대 5행)</p>
+                  <div className="overflow-auto max-h-48 border rounded">
+                    <table className="tbl text-xs">
+                      <thead>
+                        <tr>{bulkPreview.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {bulkPreview.preview.map((row, ri) => (
+                          <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{cell}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="modal-footer mt-4">
+                    <button onClick={() => { setBulkStep(1); setBulkPreview(null); setBulkFile(null); }} className="btn-secondary">이전</button>
+                    <button onClick={startBulkImport} disabled={bulkImporting} className="btn-primary">
+                      {bulkImporting ? '등록 중...' : `등록 시작 (${bulkPreview.total}명)`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: 결과 */}
+              {bulkStep === 3 && bulkResult && (
+                <div>
+                  <div className="flex gap-6 mb-4 justify-center">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-green-600">{bulkResult.created}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">✅ 등록 완료</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-yellow-500">{bulkResult.skipped}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">⚠ 중복 스킵</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-red-500">{bulkResult.errors.length}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">❌ 오류</p>
+                    </div>
+                  </div>
+                  {bulkResult.errors.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700 mb-2">오류 상세</p>
+                      <div className="overflow-auto max-h-48 border rounded">
+                        <table className="tbl text-xs">
+                          <thead><tr><th className="w-16 text-center">행</th><th>오류 내용</th></tr></thead>
+                          <tbody>
+                            {bulkResult.errors.map((e, i) => (
+                              <tr key={i}>
+                                <td className="text-center font-mono">{e.row}</td>
+                                <td className="text-red-600">{e.message}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  <div className="modal-footer mt-4">
+                    <button onClick={closeBulkModal} className="btn-primary">닫기</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

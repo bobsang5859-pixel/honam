@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node_modules/.bin/tsc:*)",
+      "Bash(node -e \":*)",
+      "Bash(curl -s \"http://localhost:4900/\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4900/api/system/public-info)",
+      "Bash(timeout 15 node_modules/.bin/ts-node --transpile-only -P tsconfig.server.json src/server/index.ts)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":4900\")",
+      "Read(//c/Users/총무구매/.claude/projects/c--Users------Desktop-hospital-supply-app/memory/**)",
+      "Bash(npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities)",
+      "Bash(npm install:*)",
+      "Bash(node_modules/.bin/ts-node --project tsconfig.electron.json prisma/seed.ts)",
+      "Bash(curl -s \"https://apis.data.go.kr/B551182/mcatInfoService1.2/getPaymentNonPaymentList?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1&_type=json&itmNm=%EA%B1%B0%EC%A6%88\")",
+      "Bash(curl -s \"https://apis.data.go.kr/B551182/mcatInfoService/getPaymentNonPaymentList?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1&_type=json&itmNm=%EA%B1%B0%EC%A6%88\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/mcatInfoService/getPaymentNonPaymentList?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1&_type=json\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/mcatInfoService/getPaymentNonPaymentList?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/mcatInfoService1.2/getPaymentNonPaymentList1.2?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1&_type=json&itmNm=%EA%B1%B0%EC%A6%88\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/dissNameCodeInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/dissStatsInfoService/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/dissStatsInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=2&pageNo=1&_type=json&sickNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickCd=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&dissNm=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByHsptlzFrgnStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByHsptlzFrgnStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&stYear=2023&sickCd=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByHsptlzFrgnStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&year=2023&sickCd=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&searchText=%EB%8B%B9%EB%87%A8\")",
+      "WebFetch(domain:www.data.go.kr)",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_NM&searchText=%EB%8B%B9%EB%87%A8\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByHsptlzFrgnStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_CD&searchText=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByGenderAgeStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_CD&searchText=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByClassesStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_CD&searchText=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByAreaStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=3&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_CD&searchText=E11\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByHsptlzFrgnStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=5&pageNo=1&_type=json&year=2023&sickCd=E11&sickType=1&medTp=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByGenderAgeStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=5&pageNo=1&_type=json&year=2023&sickCd=E11&sickType=1&medTp=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByClassesStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=5&pageNo=1&_type=json&year=2023&sickCd=E11&sickType=1&medTp=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissByAreaStats1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=5&pageNo=1&_type=json&year=2023&sickCd=E11&sickType=1&medTp=1\")",
+      "Bash(curl -s \"http://apis.data.go.kr/B551182/diseaseInfoService1/getDissNameCodeList1?serviceKey=404c9832071e01831b2523b19ce63cf7749932d54f0b3c45998a6331d4dc2dd0&numOfRows=1&pageNo=1&_type=json&sickType=1&medTp=1&diseaseType=SICK_CD&searchText=A\")",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\(''''totalCount:'''',d[''''response''''][''''body''''][''''totalCount'''']\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\총무구매\\.claude\\projects\\c--Users------Desktop-hospital-supply-app\\memory"
+    ]
+  }
+}

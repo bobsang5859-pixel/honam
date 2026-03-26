@@ -682,7 +682,7 @@ export default function SystemPage() {
       {/* ── 부서 모달 ── */}
       {deptModal && (
         <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setDeptModal(null); }}>
-          <div className="modal w-full max-w-md">
+          <div className="modal w-full max-w-2xl">
             <div className="modal-header">
               <h2 className="modal-title">{deptModal === 'create' ? '부서 등록' : '부서 수정'}</h2>
               <button onClick={() => setDeptModal(null)} className="text-slate-400 text-xl">&times;</button>

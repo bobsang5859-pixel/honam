@@ -23,6 +23,7 @@ const ItemCategoriesPage    = lazy(() => import('./pages/ItemCategoriesPage'));
 const StatsCategoriesPage   = lazy(() => import('./pages/StatsCategoriesPage'));
 const ExpenseScopesPage     = lazy(() => import('./pages/ExpenseScopesPage'));
 const PatientStatsPage   = lazy(() => import('./pages/PatientStatsPage'));
+const ComplaintsPage     = lazy(() => import('./pages/ComplaintsPage'));
 const PatientManagePage  = lazy(() => import('./pages/PatientManagePage'));
 const DeptCategoryPage      = lazy(() => import('./pages/DeptCategoryPage'));
 const EquipmentRequestPage  = lazy(() => import('./pages/EquipmentRequestPage'));
@@ -263,11 +264,12 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        {/* patient-stats는 /stats 내 환자통계 탭으로 통합 */}
         <Route
-          path="patient-stats"
+          path="complaints"
           element={
-            <ProtectedRoute perm="PATIENT_MANAGE" menuKey="patient-stats">
-              <Suspense fallback={<Loading />}><PatientStatsPage /></Suspense>
+            <ProtectedRoute anyPerm={['REQUEST_USE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN']} menuKey="complaints">
+              <Suspense fallback={<Loading />}><ComplaintsPage /></Suspense>
             </ProtectedRoute>
           }
         />

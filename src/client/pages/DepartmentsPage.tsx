@@ -198,7 +198,7 @@ export default function DepartmentsPage() {
 
       {(modal === 'create' || modal === 'edit') && (
         <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setModal(null); }}>
-          <div className="modal w-full max-w-md">
+          <div className="modal w-full max-w-2xl">
             <div className="modal-header">
               <h2 className="modal-title">{modal === 'create' ? '부서 등록' : '부서 수정'}</h2>
               <button onClick={() => setModal(null)} className="text-gray-400 text-xl">&times;</button>

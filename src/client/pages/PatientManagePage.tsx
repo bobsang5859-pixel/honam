@@ -1614,6 +1614,14 @@ export default function PatientManagePage() {
                       <div className="col-span-2"><label className="text-[10px] text-slate-500 font-semibold">비고</label><input className="input w-full" value={selectedCell.note || ''} onChange={e => setSelectedCell({ ...selectedCell, note: e.target.value })} placeholder="메모" /></div>
                     </div>
                   </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />진료비</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className="text-[10px] text-slate-500 font-semibold">월 진료비</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_medical_fee ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_medical_fee: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">수납액</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_payment ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_payment: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">미수금</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_unpaid ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_unpaid: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
+                    </div>
+                  </div>
                 </div>
               )}
               {/* ━━━ 탭1: 간호정보 ━━━ */}
@@ -1932,7 +1940,7 @@ export default function PatientManagePage() {
 
       {transferOpen && selectedCell?.patient_id && (
         <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setTransferOpen(false); }}>
-          <div className="modal w-full max-w-sm">
+          <div className="modal w-full max-w-xl">
             <div className="modal-header">
               <h2 className="modal-title">자리이동 — {selectedCell.patient_name}</h2>
               <button className="text-xl text-slate-400" onClick={() => setTransferOpen(false)}>&times;</button>
@@ -2033,7 +2041,7 @@ export default function PatientManagePage() {
       {/* 임종실 선택 모달 */}
       {hospiceModalOpen && selectedCell && (
         <div className="modal-backdrop" style={{ zIndex: 60 }} onClick={e => { if (e.target === e.currentTarget) setHospiceModalOpen(false); }}>
-          <div className="modal w-full max-w-md">
+          <div className="modal w-full max-w-2xl">
             <div className="modal-header">
               <h2 className="modal-title">임종실 이동 — {selectedCell.patient_name}</h2>
               <button className="text-xl text-slate-400" onClick={() => setHospiceModalOpen(false)}>&times;</button>
@@ -2073,7 +2081,7 @@ export default function PatientManagePage() {
       {/* 퇴원 확인 모달 */}
       {dischargeModalOpen && selectedCell && (
         <div className="modal-backdrop" style={{ zIndex: 60 }} onClick={e => { if (e.target === e.currentTarget) setDischargeModalOpen(false); }}>
-          <div className="modal w-full max-w-sm">
+          <div className="modal w-full max-w-xl">
             <div className="modal-header">
               <h2 className="modal-title">퇴원 처리 — {selectedCell.patient_name}</h2>
               <button className="text-xl text-slate-400" onClick={() => setDischargeModalOpen(false)}>&times;</button>
@@ -2252,7 +2260,7 @@ export default function PatientManagePage() {
       {/* 주상병/V코드 마스터 추가/편집 모달 */}
       {codeEditOpen && (
         <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setCodeEditOpen(false); }}>
-          <div className="modal w-full max-w-md">
+          <div className="modal w-full max-w-2xl">
             <div className="modal-header">
               <h2 className="modal-title">{editingCodeId ? '코드 수정' : '코드 추가'}</h2>
               <button className="text-xl text-slate-400" onClick={() => setCodeEditOpen(false)}>&times;</button>

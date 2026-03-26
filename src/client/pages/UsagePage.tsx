@@ -386,7 +386,7 @@ export default function UsagePage() {
       {/* ── 단건 사용등록 모달 ─────────────────────────────────────────────── */}
       {modal && (
         <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal(false); }}>
-          <div className="modal w-full max-w-md">
+          <div className="modal w-full max-w-2xl">
             <div className="modal-header">
               <h2 className="modal-title">사용등록</h2>
               <button onClick={() => setModal(false)} className="text-slate-400 text-xl">&times;</button>

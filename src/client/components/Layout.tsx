@@ -10,7 +10,7 @@ import {
   Ruler, CalendarClock, HeartPulse, Flame, CheckCircle2, FileText,
   PackageCheck, PackageOpen, Boxes, ClipboardList, Monitor, PenLine,
   ArrowLeftRight, Wrench, ClipboardCheck, PieChart, User, Users,
-  ScrollText, Settings, LogOut, Menu, X, ChevronDown,
+  ScrollText, Settings, LogOut, Menu, X, ChevronDown, MessageSquare,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -44,6 +44,7 @@ const MENU_SECTIONS: MenuSection[] = [
       { key: 'request-schedules',  path: '/request-schedules',  label: '신청주기', icon: CalendarClock, perm: 'BASIC_MANAGE' },
       { key: 'treatment-types',    path: '/treatment-types',    label: '처치유형', icon: HeartPulse,    perm: 'BASIC_MANAGE' },
       { key: 'incineration',       path: '/incineration',       label: '소각료',   icon: Flame,         perm: 'BASIC_MANAGE' },
+      { key: 'patient-manage',     path: '/patient-manage',     label: '환자관리', icon: User,          perm: 'PATIENT_MANAGE' },
     ],
   },
   {
@@ -71,8 +72,7 @@ const MENU_SECTIONS: MenuSection[] = [
     key: 'etc', label: '기타',
     items: [
       { key: 'stats-dashboard', path: '/stats',          label: '통계',     icon: PieChart, anyPerm: ['STATS_VIEW', 'SYSTEM_ADMIN'] },
-      { key: 'patient-manage',  path: '/patient-manage', label: '환자관리', icon: User,     perm: 'PATIENT_MANAGE' },
-      { key: 'patient-stats',   path: '/patient-stats',  label: '환자통계', icon: BarChart3, perm: 'PATIENT_MANAGE' },
+      { key: 'complaints',      path: '/complaints',     label: '민원·상담', icon: MessageSquare, anyPerm: ['REQUEST_USE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN'] },
     ],
   },
   {

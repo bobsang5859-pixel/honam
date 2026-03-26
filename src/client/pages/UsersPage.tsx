@@ -18,13 +18,14 @@ interface PermTab {
 }
 
 const PERM_TABS: PermTab[] = [
-  { key: 'basic-registration', label: '기초등록', desc: '품목·업체·분류·기준·사용자·감사로그 관리', sections: [
+  { key: 'basic-registration', label: '기초등록', desc: '품목·업체·분류·기준량·환자관리', sections: [
     { label: '기초등록', items: [
       { key: 'ITEM_MANAGE', label: '품목 관리' },
       { key: 'VENDOR_MANAGE', label: '업체 관리' },
       { key: 'BASELINE_MANAGE', label: '기준량 관리' },
       { key: 'SCHEDULE_MANAGE', label: '신청주기 관리' },
       { key: 'AUDIT_VIEW', label: '감사로그 조회' },
+      { key: 'PATIENT_VIEW', label: '환자 관리' },
     ] },
   ] },
   { key: 'request-use', label: '신청·사용', desc: '소모품/비품 신청, 사용등록, 대여, 수령검수', sections: [
@@ -44,17 +45,14 @@ const PERM_TABS: PermTab[] = [
       { key: 'INVENTORY_MANAGE', label: '재고 관리' },
     ] },
   ] },
-  { key: 'stats-work', label: '통계', desc: '비용통계, 물품분석, 수요예측', sections: [
-    { label: '통계', items: [
-      { key: 'COST_VIEW', label: '비용 통계' },
-      { key: 'SUPPLY_ANALYTICS_VIEW', label: '물품 분석' },
-      { key: 'DEMAND_FORECAST_VIEW', label: '수요 예측' },
+  { key: 'stats-work', label: '통계', desc: '물품통계·환자통계 조회 권한', sections: [
+    { label: '물품 통계', items: [
+      { key: 'STATS_VIEW', label: '내 부서만' },
+      { key: 'STATS_VIEW_ALL', label: '전체 조회' },
     ] },
-  ] },
-  { key: 'patient', label: '환자관리', desc: '환자 관리, 환자 통계', sections: [
-    { label: '환자관리', items: [
-      { key: 'PATIENT_VIEW', label: '환자 관리' },
-      { key: 'PATIENT_STATS_VIEW', label: '환자 통계' },
+    { label: '환자 통계', items: [
+      { key: 'PATIENT_STATS_VIEW', label: '내 병동만' },
+      { key: 'PATIENT_STATS_VIEW_ALL', label: '전체 조회' },
     ] },
   ] },
 ];
@@ -338,123 +336,65 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
               {/* 업무 권한 */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-3">
                   <label className="label mb-0">업무 권한 부여</label>
                   <div className="flex gap-2 text-xs">
-                    <button type="button" onClick={() => setForm(f => ({ ...f, direct_permissions: ALL_PERM_KEYS }))} className="text-teal-600 hover:underline">전체 선택</button>
+                    <button type="button" onClick={() => setForm(f => ({ ...f, direct_permissions: ALL_PERM_KEYS }))} className="text-blue-600 hover:underline">전체 선택</button>
                     <button type="button" onClick={() => setForm(f => ({ ...f, direct_permissions: [] }))} className="text-slate-400 hover:underline">전체 해제</button>
                   </div>
                 </div>
 
-                {/* 탭 헤더 */}
-                <div className="flex border border-gray-200 rounded-t-xl overflow-hidden">
-                  {PERM_TABS.map((tab, idx) => {
+                {/* 카드형 그룹 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {PERM_TABS.map(tab => {
                     const tabKeys = tab.sections.flatMap(s => s.items.map(i => i.key));
                     const checkedCount = tabKeys.filter(k => form.direct_permissions.includes(k)).length;
-                    const isActive = activePermTab === tab.key;
+                    const allChecked = tabKeys.every(k => form.direct_permissions.includes(k));
+                    const someChecked = checkedCount > 0;
+                    const toggleAll = () => {
+                      if (allChecked) {
+                        setForm(f => ({ ...f, direct_permissions: f.direct_permissions.filter(p => !tabKeys.includes(p)) }));
+                      } else {
+                        setForm(f => ({ ...f, direct_permissions: [...new Set([...f.direct_permissions, ...tabKeys])] }));
+                      }
+                    };
+                    const colors = allChecked ? 'border-blue-300 bg-blue-50/50' : someChecked ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white';
                     return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setActivePermTab(tab.key)}
-                        className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors border-b-2
-                          ${idx > 0 ? 'border-l border-gray-200' : ''}
-                          ${isActive
-                            ? 'bg-white border-b-teal-500 text-teal-700'
-                            : 'bg-gray-50 border-b-transparent text-slate-500 hover:bg-gray-100'
-                          }`}
-                      >
-                        {tab.label}
-                        {checkedCount > 0 && (
-                          <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none
-                            ${isActive ? 'bg-teal-100 text-teal-700' : 'bg-gray-200 text-slate-600'}`}>
-                            {checkedCount}
-                          </span>
-                        )}
-                      </button>
+                      <div key={tab.key} className={`border rounded-xl p-4 transition-colors ${colors}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <p className="text-sm font-bold text-slate-700">{tab.label}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{tab.desc}</p>
+                          </div>
+                          <button type="button" onClick={toggleAll} className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-colors ${allChecked ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-slate-400 border-gray-200 hover:border-blue-300'}`}>
+                            {allChecked ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {tab.sections.map(section => (
+                            <div key={section.label}>
+                              {tab.sections.length > 1 && (
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 mt-1 border-b border-gray-100 pb-1">{section.label}</p>
+                              )}
+                              <div className="space-y-1">
+                                {section.items.map(item => {
+                                  const checked = form.direct_permissions.includes(item.key);
+                                  return (
+                                    <label key={item.key} className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-white shadow-sm border border-blue-100' : 'hover:bg-gray-50'}`}>
+                                      <input type="checkbox" checked={checked} onChange={() => togglePerm(item.key)} className="rounded accent-blue-500" />
+                                      <span className={`text-xs ${checked ? 'text-slate-800 font-semibold' : 'text-slate-400'}`}>{item.label}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-
-                {/* 탭 콘텐츠 */}
-                {PERM_TABS.filter(t => t.key === activePermTab).map(tab => {
-                  const tabKeys = tab.sections.flatMap(s => s.items.map(i => i.key));
-                  const allTabChecked = tabKeys.every(k => form.direct_permissions.includes(k));
-                  const toggleTab = () => {
-                    if (allTabChecked) {
-                      setForm(f => ({ ...f, direct_permissions: f.direct_permissions.filter(p => !tabKeys.includes(p)) }));
-                    } else {
-                      setForm(f => ({ ...f, direct_permissions: [...new Set([...f.direct_permissions, ...tabKeys])] }));
-                    }
-                  };
-                  return (
-                    <div key={tab.key} className="border border-t-0 border-gray-200 rounded-b-xl p-3">
-                      <div className="flex items-start justify-between mb-3">
-                        <p className="text-[11px] text-slate-400 leading-snug max-w-[75%]">{tab.desc}</p>
-                        <button
-                          type="button"
-                          onClick={toggleTab}
-                          className={`text-[10px] px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap ml-2 flex-shrink-0 ${
-                            allTabChecked
-                              ? 'bg-teal-50 text-teal-600 border-teal-200'
-                              : 'bg-gray-50 text-slate-400 border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {allTabChecked ? '전체해제' : '전체선택'}
-                        </button>
-                      </div>
-                      {tab.sections.map(section => {
-                        const secKeys = section.items.map(i => i.key);
-                        const allSecChecked = secKeys.every(k => form.direct_permissions.includes(k));
-                        const someSecChecked = secKeys.some(k => form.direct_permissions.includes(k));
-                        const toggleSection = () => {
-                          if (allSecChecked) {
-                            setForm(f => ({ ...f, direct_permissions: f.direct_permissions.filter(p => !secKeys.includes(p)) }));
-                          } else {
-                            setForm(f => ({ ...f, direct_permissions: [...new Set([...f.direct_permissions, ...secKeys])] }));
-                          }
-                        };
-                        return (
-                          <div key={section.label} className="mb-3 last:mb-0">
-                            {tab.sections.length > 1 && (
-                              <div className="flex items-center justify-between mb-1">
-                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{section.label}</p>
-                                <button
-                                  type="button"
-                                  onClick={toggleSection}
-                                  className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                                    allSecChecked ? 'bg-teal-50 text-teal-600 border-teal-200' :
-                                    someSecChecked ? 'bg-amber-50 text-amber-500 border-amber-200' :
-                                    'bg-gray-50 text-slate-400 border-gray-200 hover:border-gray-300'
-                                  }`}
-                                >
-                                  {allSecChecked ? '해제' : someSecChecked ? '일부' : '선택'}
-                                </button>
-                              </div>
-                            )}
-                            <div className="grid grid-cols-1 gap-0.5">
-                              {section.items.map(item => (
-                                <label key={item.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm cursor-pointer hover:bg-gray-50">
-                                  <input
-                                    type="checkbox"
-                                    checked={form.direct_permissions.includes(item.key)}
-                                    onChange={() => togglePerm(item.key)}
-                                    className="rounded"
-                                  />
-                                  <span className={form.direct_permissions.includes(item.key) ? 'text-slate-800 font-medium' : 'text-slate-400'}>
-                                    {item.label}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-
-                <p className="text-[10px] text-slate-400 mt-1.5">선택된 권한: {form.direct_permissions.length}개</p>
+                <p className="text-[10px] text-slate-400 mt-2">선택된 권한: {form.direct_permissions.length}개</p>
               </div>
             </div>
             <div className="modal-footer">

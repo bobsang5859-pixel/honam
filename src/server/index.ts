@@ -152,6 +152,7 @@ import inventoryStatsRoutes        from './routes/inventory-stats';
 import stockoutStatsRoutes         from './routes/stockout-stats';
 import hiraApiRoutes               from './routes/hira-api';
 import hiraDiseaseStatsRoutes      from './routes/hira-disease-stats';
+import complaintRoutes             from './routes/complaints';
 
 app.use('/api/auth',           authRoutes);
 app.use('/api/departments',    departmentRoutes);
@@ -194,6 +195,7 @@ app.use('/api/inventory-stats',  inventoryStatsRoutes);
 app.use('/api/stockout-stats',   stockoutStatsRoutes);
 app.use('/api/hira',             hiraApiRoutes);
 app.use('/api/hira-disease-stats', hiraDiseaseStatsRoutes);
+app.use('/api/complaints',        complaintRoutes);
 
 // Static uploads
 const uploadsDir = path.join(process.env.USER_DATA_PATH || '.', 'uploads');

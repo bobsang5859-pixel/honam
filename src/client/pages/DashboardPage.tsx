@@ -87,6 +87,11 @@ export default function DashboardPage() {
   const ch = pStats?.charges || {};
   const today = new Date();
 
+  const isAdmin = hasPerm('SYSTEM_ADMIN');
+  const isPurchase = hasPerm('PURCHASE_MANAGE');
+  const isWard = hasPerm('REQUEST_USE') && !isAdmin && !isPurchase;
+  const isFullView = isAdmin || isPurchase;
+
   return (
     <div className="space-y-5">
       {/* ─── 인사 + 날짜 ─── */}
@@ -96,84 +101,146 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── 상단 KPI ─── */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-        <KPI icon={TrendingUp} label="불출금액" value={`₩${((data?.month_issued_amount ?? 0) / 10000).toFixed(0)}만`} color="blue" />
-        <KPI icon={ClipboardList} label="신청" value={`${data?.month_request_count ?? 0}`} color="indigo" />
-        <KPI icon={AlertTriangle} label="승인대기" value={`${data?.pending_approval_count ?? 0}`} color="amber" />
-        <KPI icon={Users} label="입원환자" value={`${o.total_occupied ?? 0}`} sub={`/${o.total_capacity ?? 0}`} color="teal" />
-        <KPI icon={Activity} label="가동률" value={`${o.occupancy_rate ?? 0}%`} color="green" />
-        <KPI icon={Heart} label="임종실" value={`${cmp.hospice_count?.current ?? 0}`} color="rose" />
-      </div>
+      {isFullView ? (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          <KPI icon={TrendingUp} label="불출금액" value={`₩${((data?.month_issued_amount ?? 0) / 10000).toFixed(0)}만`} color="blue" />
+          <KPI icon={ClipboardList} label="신청" value={`${data?.month_request_count ?? 0}`} color="indigo" />
+          <KPI icon={AlertTriangle} label="승인대기" value={`${data?.pending_approval_count ?? 0}`} color="amber" />
+          <KPI icon={Users} label="입원환자" value={`${o.total_occupied ?? 0}`} sub={`/${o.total_capacity ?? 0}`} color="teal" />
+          <KPI icon={Activity} label="가동률" value={`${o.occupancy_rate ?? 0}%`} color="green" />
+          <KPI icon={Heart} label="임종실" value={`${cmp.hospice_count?.current ?? 0}`} color="rose" />
+        </div>
+      ) : isWard ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KPI icon={Users} label="입원환자" value={`${o.total_occupied ?? 0}`} sub={`/${o.total_capacity ?? 0}`} color="teal" />
+          <KPI icon={Activity} label="가동률" value={`${o.occupancy_rate ?? 0}%`} color="green" />
+          <KPI icon={ClipboardList} label="신청" value={`${data?.month_request_count ?? 0}`} color="indigo" />
+          <KPI icon={Heart} label="임종실" value={`${cmp.hospice_count?.current ?? 0}`} color="rose" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <KPI icon={ClipboardList} label="신청" value={`${data?.month_request_count ?? 0}`} color="indigo" />
+          <KPI icon={TrendingUp} label="불출금액" value={`₩${((data?.month_issued_amount ?? 0) / 10000).toFixed(0)}만`} color="blue" />
+          <KPI icon={AlertTriangle} label="승인대기" value={`${data?.pending_approval_count ?? 0}`} color="amber" />
+        </div>
+      )}
 
       {/* ─── 메인 영역 (좌: 차트 / 우: 캘린더) ─── */}
       <div className="grid lg:grid-cols-5 gap-5">
 
         {/* 좌측 3칸 */}
         <div className="lg:col-span-3 space-y-5">
-          {/* 월별 추이 */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-            <p className="text-sm font-bold text-slate-700 mb-4">월별 불출금액 추이</p>
-            <div className="flex items-end gap-2 h-40">
-              {(data?.monthly_trend ?? []).slice(-8).map((m, i, arr) => {
-                const max = Math.max(...arr.map(t => t.amount), 1);
-                const pct = (m.amount / max) * 100;
-                return (
-                  <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                    <span className="text-[10px] text-slate-500 font-medium">{m.amount > 0 ? `${(m.amount / 10000).toFixed(0)}만` : ''}</span>
-                    <div className="w-full rounded-t-lg transition-all" style={{ height: `${Math.max(pct, 4)}%`, background: `linear-gradient(180deg, ${COLORS[i % COLORS.length]}cc, ${COLORS[i % COLORS.length]})` }} />
-                    <span className="text-[10px] text-slate-400">{m.month.slice(5)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 분포 차트 2개 */}
-          <div className="grid md:grid-cols-2 gap-4">
-            <BarChart title="보험유형" data={bd.insurance_type} labels={INS_LABEL} />
-            <BarChart title="환자군" data={bd.patient_group} labels={GRP_LABEL} />
-          </div>
-
-          {/* 부서별 + 급여/비급여 */}
-          <div className="grid md:grid-cols-2 gap-4">
+          {/* 월별 추이 — 관리자/구매만 */}
+          {isFullView && (
             <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-              <p className="text-sm font-bold text-slate-700 mb-3">부서별 불출금액</p>
-              <div className="space-y-2">
-                {(data?.dept_comparison ?? []).slice(0, 6).map((d, i) => {
-                  const max = Math.max(...(data?.dept_comparison ?? []).map(x => x.amount), 1);
+              <p className="text-sm font-bold text-slate-700 mb-4">월별 불출금액 추이</p>
+              <div className="flex items-end gap-2 h-40">
+                {(data?.monthly_trend ?? []).slice(-8).map((m, i, arr) => {
+                  const max = Math.max(...arr.map(t => t.amount), 1);
+                  const pct = (m.amount / max) * 100;
                   return (
-                    <div key={d.dept_name} className="flex items-center gap-2 text-xs">
-                      <span className="w-16 text-right text-slate-500 truncate">{d.dept_name}</span>
-                      <div className="flex-1 h-4 bg-gray-50 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${(d.amount / max) * 100}%`, background: COLORS[i % COLORS.length] }} />
-                      </div>
-                      <span className="w-16 text-right text-slate-600 font-medium">{(d.amount / 10000).toFixed(0)}만</span>
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                      <span className="text-[10px] text-slate-500 font-medium">{m.amount > 0 ? `${(m.amount / 10000).toFixed(0)}만` : ''}</span>
+                      <div className="w-full rounded-t-lg transition-all" style={{ height: `${Math.max(pct, 4)}%`, background: `linear-gradient(180deg, ${COLORS[i % COLORS.length]}cc, ${COLORS[i % COLORS.length]})` }} />
+                      <span className="text-[10px] text-slate-400">{m.month.slice(5)}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-              <p className="text-sm font-bold text-slate-700 mb-3">급여 / 비급여</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-[10px] font-semibold text-blue-600 mb-1">급여</p>
-                  {Object.entries(ch.covered || {}).length > 0 ? Object.entries(ch.covered || {}).map(([n, v]: any) => (
-                    <div key={n} className="flex justify-between text-xs py-1 border-b border-gray-50"><span className="text-slate-500">{n}</span><span className="font-medium">₩{(v.total || 0).toLocaleString()}</span></div>
-                  )) : <p className="text-[10px] text-slate-300">-</p>}
+          )}
+
+          {/* 분포 차트 — 관리자/병동 */}
+          {(isAdmin || isWard) && (
+            <div className="grid md:grid-cols-2 gap-4">
+              <BarChart title="보험유형" data={bd.insurance_type} labels={INS_LABEL} />
+              <BarChart title="환자군" data={bd.patient_group} labels={GRP_LABEL} />
+            </div>
+          )}
+
+          {/* 부서별 + 급여/비급여 — 관리자/구매만 */}
+          {isFullView && (
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                <p className="text-sm font-bold text-slate-700 mb-3">부서별 불출금액</p>
+                <div className="space-y-2">
+                  {(data?.dept_comparison ?? []).slice(0, 6).map((d, i) => {
+                    const max = Math.max(...(data?.dept_comparison ?? []).map(x => x.amount), 1);
+                    return (
+                      <div key={d.dept_name} className="flex items-center gap-2 text-xs">
+                        <span className="w-16 text-right text-slate-500 truncate">{d.dept_name}</span>
+                        <div className="flex-1 h-4 bg-gray-50 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(d.amount / max) * 100}%`, background: COLORS[i % COLORS.length] }} />
+                        </div>
+                        <span className="w-16 text-right text-slate-600 font-medium">{(d.amount / 10000).toFixed(0)}만</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-amber-600 mb-1">비급여</p>
-                  {Object.entries(ch.non_covered || {}).length > 0 ? Object.entries(ch.non_covered || {}).map(([n, v]: any) => (
-                    <div key={n} className="flex justify-between text-xs py-1 border-b border-gray-50"><span className="text-slate-500">{n}</span><span className="font-medium">₩{(v.total || 0).toLocaleString()}</span></div>
-                  )) : <p className="text-[10px] text-slate-300">-</p>}
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                <p className="text-sm font-bold text-slate-700 mb-3">급여 / 비급여</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold text-blue-600 mb-1">급여</p>
+                    {Object.entries(ch.covered || {}).length > 0 ? Object.entries(ch.covered || {}).map(([n, v]: any) => (
+                      <div key={n} className="flex justify-between text-xs py-1 border-b border-gray-50"><span className="text-slate-500">{n}</span><span className="font-medium">₩{(v.total || 0).toLocaleString()}</span></div>
+                    )) : <p className="text-[10px] text-slate-300">-</p>}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-amber-600 mb-1">비급여</p>
+                    {Object.entries(ch.non_covered || {}).length > 0 ? Object.entries(ch.non_covered || {}).map(([n, v]: any) => (
+                      <div key={n} className="flex justify-between text-xs py-1 border-b border-gray-50"><span className="text-slate-500">{n}</span><span className="font-medium">₩{(v.total || 0).toLocaleString()}</span></div>
+                    )) : <p className="text-[10px] text-slate-300">-</p>}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* 병동 사용자: 신청 현황 */}
+          {isWard && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-3">최근 신청 현황</p>
+              {(data?.recent_requests ?? []).length > 0 ? (
+                <div className="space-y-2">
+                  {(data?.recent_requests ?? []).slice(0, 5).map(r => (
+                    <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-50 text-xs">
+                      <div>
+                        <span className="font-medium text-slate-700">{r.request_no}</span>
+                        <span className="text-slate-400 ml-2">{r.department_name}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${r.status === 'APPROVED' ? 'bg-green-100 text-green-700' : r.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {r.status === 'APPROVED' ? '승인' : r.status === 'SUBMITTED' ? '제출' : r.status === 'REJECTED' ? '반려' : r.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-slate-300 text-center py-4">최근 신청 없음</p>}
+            </div>
+          )}
+
+          {/* 일반 사용자: 내 부서 신청 현황 */}
+          {!isFullView && !isWard && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-3">내 부서 신청 현황</p>
+              {(data?.recent_requests ?? []).length > 0 ? (
+                <div className="space-y-2">
+                  {(data?.recent_requests ?? []).slice(0, 5).map(r => (
+                    <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-50 text-xs">
+                      <span className="font-medium text-slate-700">{r.request_no}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${r.status === 'APPROVED' ? 'bg-green-100 text-green-700' : r.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {r.status === 'APPROVED' ? '승인' : r.status === 'SUBMITTED' ? '제출' : r.status === 'REJECTED' ? '반려' : r.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-slate-300 text-center py-4">최근 신청 없음</p>}
+            </div>
+          )}
         </div>
 
-        {/* 우측 2칸: 캘린더 */}
+        {/* 우측 2칸: 캘린더 (모든 사용자 공통) */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
             {/* 월 이동 */}

@@ -8,7 +8,7 @@ import { audit } from '../utils/audit';
 // ── 보류 큐: 엑셀 파일 잠금으로 쓰기 실패한 행 이동 작업 ──────────────────
 interface PendingMove {
   chartNo: string;
-  sheetName: string; // '퇴원기록' | '사망기록'
+  sheetName: string; // '퇴원기록'
   rowValues: any[];
   closedAt: string;  // ISO date string
 }
@@ -53,7 +53,7 @@ const IMPORT_HEADER_MAP: Record<string, string> = {
   '시군구관할관청': 'project_sigungu_office', '시군구': 'project_sigungu_office',
   '비고': 'note', '메모': 'note',
   '병동': 'department_code', '병동코드': 'department_code', '병동명': 'department_code',
-  '상태': 'status_action',   // 퇴원 | 사망 | (빈칸=입원중)
+  '상태': 'status_action',   // 퇴원 | (빈칸=입원중)
 };
 
 const cleanHdr = (cell: any) => String(cell ?? '').trim().replace(/[★*✓✗]/g, '').trim();
@@ -109,20 +109,19 @@ function parseDateField(raw: any): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// ── DB 퇴원/사망 처리 (Express req 없이) ─────────────────────────────────────
+// ── DB 퇴원 처리 (Express req 없이) ──────────────────────────────────────────
 async function closePatientInDB(
   patient: any,
   actorUserId: string,
-  eventType: 'DISCHARGE' | 'DEATH',
+  reason?: string,
 ): Promise<void> {
   const now = new Date();
-  const newStatus = eventType === 'DEATH' ? 'DECEASED' : 'DISCHARGED';
   await (prisma as any).patient.update({
     where: { id: patient.id },
     data: {
-      status: newStatus,
+      status: 'DISCHARGED',
       discharged_at: now,
-      deceased_at: eventType === 'DEATH' ? now : null,
+      ...(reason ? { note: [patient.note, `[퇴원사유] ${reason}`].filter(Boolean).join('\n') } : {}),
     },
   });
   await (prisma as any).patientEvent.create({
@@ -130,12 +129,12 @@ async function closePatientInDB(
       id: uuidv4(),
       patient_id: patient.id,
       department_id: patient.department_id,
-      event_type: eventType,
+      event_type: 'DISCHARGE',
       event_date: now,
       room_no: patient.room_no ?? '',
       bed_no: patient.bed_no ?? null,
       prev_hospital: patient.prev_hospital ?? '',
-      memo: 'Excel 자동 처리',
+      memo: reason || 'Excel 자동 처리',
       created_by: actorUserId,
     } as any,
   });
@@ -146,7 +145,7 @@ async function closePatientInDB(
       deleted_at: null,
     },
     data: {
-      status: newStatus,
+      status: 'DISCHARGED',
       patient_id: null,
       patient_no: '',
       chart_no: '',
@@ -378,7 +377,7 @@ export interface ImportResult {
   created: number;
   skipped: number;
   discharged: number;
-  deceased: number;
+  deceased: number; // 하위호환용 (항상 0)
   updated: number;
   errors: { row: number; message: string }[];
   synced_at: string;
@@ -394,11 +393,66 @@ export async function importPatientsFromBuffer(
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
 
-  // 환자목록 시트 찾기
+  // ── 병동별 시트 지원: 시트 이름이 병동명과 일치하면 자동 매핑 ──────────
+  const allDepts: any[] = await (prisma as any).department.findMany({ where: { deleted_at: null } });
+  const deptByName = new Map<string, string>(allDepts.map((d: any) => [d.name, d.id]));
+
+  // 병동별 시트가 있는지 확인
+  const wardSheets: { ws: ExcelJS.Worksheet; deptId: string }[] = [];
+  for (const sheet of wb.worksheets) {
+    const sheetName = sheet.name.trim();
+    if (sheetName === '퇴원기록' || sheetName === '사망기록') continue;
+    const matchedDeptId = deptByName.get(sheetName);
+    if (matchedDeptId && sheet.rowCount >= 2) {
+      wardSheets.push({ ws: sheet, deptId: matchedDeptId });
+    }
+  }
+
+  // 병동별 시트가 있으면 각 시트를 개별 import 후 결과 합산
+  if (wardSheets.length > 0) {
+    const totals: ImportResult = { created: 0, skipped: 0, discharged: 0, deceased: 0, updated: 0, errors: [], synced_at: new Date().toISOString() };
+    for (const { ws: wardWs, deptId: wardDeptId } of wardSheets) {
+      const r = await importSingleSheet(wb, wardWs, wardDeptId, actorUserId, filePath);
+      totals.created += r.created;
+      totals.skipped += r.skipped;
+      totals.discharged += r.discharged;
+      totals.updated += r.updated;
+      totals.errors.push(...r.errors.map(e => ({ ...e, message: `[${wardWs.name}] ${e.message}` })));
+    }
+    totals.synced_at = new Date().toISOString();
+
+    // Excel 파일 저장 (행 이동이 있었을 수 있으므로)
+    if (filePath) {
+      await writeExcelSafe(wb, filePath);
+    }
+
+    await audit({
+      actor_user_id: actorUserId,
+      action: 'IMPORT',
+      entity_type: 'patients',
+      entity_id: 'bulk',
+      after: { created: totals.created, updated: totals.updated, discharged: totals.discharged, deceased: 0, skipped: totals.skipped, source: 'file-watcher' },
+    });
+    return totals;
+  }
+
+  // ── 기존 방식: 환자목록 단일 시트 ──────────────────────────────────────
   const ws = wb.getWorksheet('환자목록') ?? wb.worksheets[0];
   if (!ws || ws.rowCount < 2) {
     return { created: 0, skipped: 0, discharged: 0, deceased: 0, updated: 0, errors: [], synced_at: new Date().toISOString() };
   }
+
+  return importSingleSheet(wb, ws, deptId, actorUserId, filePath);
+}
+
+// ── 단일 시트 임포트 (병동별 or 환자목록) ──────────────────────────────────
+async function importSingleSheet(
+  wb: ExcelJS.Workbook,
+  ws: ExcelJS.Worksheet,
+  deptId: string,
+  actorUserId: string,
+  filePath?: string,
+): Promise<ImportResult> {
 
   // ── 행 데이터를 메모리로 읽기 ─────────────────────────────────────────────
   // rowData[i] = { values: any[], rowNum: number }
@@ -457,7 +511,6 @@ export async function importPatientsFromBuffer(
   const createdCharts: string[] = [];
   const skippedCharts: string[] = [];
   const dischargedCharts: string[] = [];
-  const deceasedCharts: string[] = [];
   const updatedCharts: string[] = [];
   const errors: { row: number; message: string }[] = [];
 
@@ -470,8 +523,7 @@ export async function importPatientsFromBuffer(
   // ── 엑셀에 남아있는 환자 chart_no 추적 ───────────────────────────────────
   const excelChartNos = new Set<string>();
 
-  // ── 퇴원/사망으로 이동될 행 수집 ─────────────────────────────────────────
-  // { rowNum: number, sheetName: '퇴원기록'|'사망기록', rowValues: any[], closedAt: Date }
+  // ── 퇴원으로 이동될 행 수집 ──────────────────────────────────────────────
   const rowsToMove: { rowNum: number; sheetName: string; rowValues: any[]; closedAt: Date }[] = [];
 
   // ── 각 데이터 행 처리 ─────────────────────────────────────────────────────
@@ -493,11 +545,12 @@ export async function importPatientsFromBuffer(
     const existingPatient = dbByChart.get(chart_no);
     const closedAt = new Date();
 
-    // ── 퇴원 처리 ─────────────────────────────────────────────────────────
-    if (statusAction === '퇴원') {
+    // ── 퇴원 처리 (사망 포함 — 사유에 기록) ──────────────────────────────
+    if (statusAction === '퇴원' || statusAction === '사망') {
+      const reason = statusAction === '사망' ? '사망' : undefined;
       if (existingPatient) {
         try {
-          await closePatientInDB(existingPatient, actorUserId, 'DISCHARGE');
+          await closePatientInDB(existingPatient, actorUserId, reason);
           dischargedCharts.push(chart_no);
         } catch (e: any) {
           errors.push({ row: dispRow, message: `퇴원 처리 오류: ${e.message}` });
@@ -505,21 +558,6 @@ export async function importPatientsFromBuffer(
       }
       // DB 상태와 무관하게 항상 행 이동
       rowsToMove.push({ rowNum, sheetName: '퇴원기록', rowValues: [...row], closedAt });
-      continue;
-    }
-
-    // ── 사망 처리 ─────────────────────────────────────────────────────────
-    if (statusAction === '사망') {
-      if (existingPatient) {
-        try {
-          await closePatientInDB(existingPatient, actorUserId, 'DEATH');
-          deceasedCharts.push(chart_no);
-        } catch (e: any) {
-          errors.push({ row: dispRow, message: `사망 처리 오류: ${e.message}` });
-        }
-      }
-      // DB 상태와 무관하게 항상 행 이동
-      rowsToMove.push({ rowNum, sheetName: '사망기록', rowValues: [...row], closedAt });
       continue;
     }
 
@@ -748,7 +786,7 @@ export async function importPatientsFromBuffer(
     for (const [chartNo, p] of dbByChart.entries()) {
       if (!excelChartNos.has(chartNo)) {
         try {
-          await closePatientInDB(p, actorUserId, 'DISCHARGE');
+          await closePatientInDB(p, actorUserId);
           dischargedCharts.push(chartNo);
         } catch (e: any) {
           errors.push({ row: -1, message: `자동 퇴원 오류 (${chartNo}): ${e.message}` });
@@ -807,7 +845,7 @@ export async function importPatientsFromBuffer(
       created: createdCharts.length,
       updated: updatedCharts.length,
       discharged: dischargedCharts.length,
-      deceased: deceasedCharts.length,
+      deceased: 0,
       skipped: skippedCharts.length,
       source: 'file-watcher',
     },
@@ -817,14 +855,14 @@ export async function importPatientsFromBuffer(
     created: createdCharts.length,
     skipped: skippedCharts.length,
     discharged: dischargedCharts.length,
-    deceased: deceasedCharts.length,
+    deceased: 0,
     updated: updatedCharts.length,
     errors,
     synced_at: new Date().toISOString(),
   };
 }
 
-// ── 행 이동 헬퍼 (퇴원/사망 행을 기록 시트로 이동) ─────────────────────────
+// ── 행 이동 헬퍼 (퇴원 행을 기록 시트로 이동) ───────────────────────────────
 async function moveRowsInExcel(
   wb: ExcelJS.Workbook,
   mainSheet: ExcelJS.Worksheet,
@@ -847,18 +885,16 @@ async function moveRowsInExcel(
   };
 
   const dischargeSheet = getOrCreateSheet('퇴원기록', '퇴원일자');
-  const deathSheet     = getOrCreateSheet('사망기록', '사망일자');
 
   const statusColIdx = colIndex['status_action'] ?? -1;
 
-  for (const { rowValues, sheetName, closedAt } of rowsToMove) {
+  for (const { rowValues, closedAt } of rowsToMove) {
     // 상태 컬럼을 빈칸으로 바꿔서 기록 시트에 추가 (상태 없음 = 처리 완료)
     const vals = [...rowValues];
     if (statusColIdx >= 0) vals[statusColIdx] = '';
 
     const dateStr = closedAt.toISOString().slice(0, 10);
-    const targetSheet = sheetName === '퇴원기록' ? dischargeSheet : deathSheet;
-    appendRowToSheet(targetSheet, [...vals, dateStr]);
+    appendRowToSheet(dischargeSheet, [...vals, dateStr]);
   }
 
   // 이동될 행 번호 수집 (높은 번호부터 삭제해야 인덱스가 안 밀림)

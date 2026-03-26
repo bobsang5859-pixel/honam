@@ -10,7 +10,7 @@ import { StatsKpiCard, StatsChartCard, StatsTableCard, StatsFilterBar, StatsTabB
 
 const CHART_COLORS = ['#0d9488', '#0891b2', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#10b981', '#f97316', '#64748b'];
 
-type StatsTab = 'all' | 'occupancy' | 'group' | 'insurance' | 'special' | 'period' | 'caregiver' | 'diaper' | 'hospital' | 'address' | 'referral' | 'discharge';
+type StatsTab = 'all' | 'occupancy' | 'group' | 'insurance' | 'special' | 'period' | 'caregiver' | 'diaper' | 'hospital' | 'address' | 'referral' | 'discharge' | 'discharge_reason' | 'covered' | 'non_covered';
 
 const TABS: { key: StatsTab; label: string }[] = [
   { key: 'all', label: '전체' },
@@ -24,7 +24,10 @@ const TABS: { key: StatsTab; label: string }[] = [
   { key: 'hospital', label: '입원전병원' },
   { key: 'address', label: '거주지' },
   { key: 'referral', label: '유입경로' },
-  { key: 'discharge', label: '퇴원유형' },
+  { key: 'discharge', label: '퇴원경로' },
+  { key: 'discharge_reason', label: '퇴원사유' },
+  { key: 'covered', label: '급여' },
+  { key: 'non_covered', label: '비급여' },
 ];
 
 const patientGroupLabel: Record<string, string> = {
@@ -152,7 +155,8 @@ export default function PatientStatsPage() {
                   : tab === 'address' ? stats.breakdown.address
                     : tab === 'referral' ? stats.breakdown.referral_source
                       : tab === 'discharge' ? stats.breakdown.discharge_type
-                        : {};
+                        : tab === 'discharge_reason' ? stats.breakdown.discharge_reason
+                          : {};
     return Object.entries(src || {})
       .map(([k, v]) => ({ name: mapLabel(tab, k), count: Number(v || 0) }))
       .sort((a, b) => b.count - a.count);
@@ -202,7 +206,7 @@ export default function PatientStatsPage() {
                   <tbody>
                     <tr><td>입원건수</td><td>{stats?.comparison?.admitted_count?.current ?? 0}</td><td>{stats?.comparison?.admitted_count?.previous ?? 0}</td><td>{stats?.comparison?.admitted_count?.diff_pct ?? 0}%</td></tr>
                     <tr><td>퇴원건수</td><td>{stats?.comparison?.discharged_count?.current ?? 0}</td><td>{stats?.comparison?.discharged_count?.previous ?? 0}</td><td>{stats?.comparison?.discharged_count?.diff_pct ?? 0}%</td></tr>
-                    <tr><td>사망건수</td><td>{stats?.comparison?.deceased_count?.current ?? 0}</td><td>{stats?.comparison?.deceased_count?.previous ?? 0}</td><td>{stats?.comparison?.deceased_count?.diff_pct ?? 0}%</td></tr>
+                    <tr><td>임종실</td><td>{stats?.comparison?.hospice_count?.current ?? 0}</td><td>{stats?.comparison?.hospice_count?.previous ?? 0}</td><td>{stats?.comparison?.hospice_count?.diff_pct ?? 0}%</td></tr>
                     <tr><td>평균재원일수</td><td>{stats?.comparison?.avg_los?.current ?? 0}</td><td>{stats?.comparison?.avg_los?.previous ?? 0}</td><td>{stats?.comparison?.avg_los?.diff_pct ?? 0}%</td></tr>
                     <tr><td>평균가동률</td><td>{stats?.comparison?.occupancy_rate?.current ?? 0}%</td><td>{stats?.comparison?.occupancy_rate?.previous ?? 0}%</td><td>{stats?.comparison?.occupancy_rate?.diff_pct ?? 0}%</td></tr>
                   </tbody>
@@ -351,7 +355,7 @@ export default function PatientStatsPage() {
                   </StatsChartCard>
                 )}
                 <table className="tbl">
-                  <thead><tr><th>퇴원유형</th><th>인원</th></tr></thead>
+                  <thead><tr><th>퇴원경로</th><th>인원</th></tr></thead>
                   <tbody>
                     {rowsForBreakdown.length === 0 ? (
                       <tr><td colSpan={2} className="text-center text-slate-400">데이터 없음</td></tr>
@@ -360,6 +364,74 @@ export default function PatientStatsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {tab === 'discharge_reason' && (
+              <div className="space-y-4">
+                {rowsForBreakdown.length > 0 && (
+                  <StatsChartCard title="퇴원사유 분포">
+                      <PieChart>
+                        <Pie data={rowsForBreakdown} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={100}
+                          label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {rowsForBreakdown.map((_: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                  </StatsChartCard>
+                )}
+                <table className="tbl">
+                  <thead><tr><th>퇴원사유</th><th>건수</th></tr></thead>
+                  <tbody>
+                    {rowsForBreakdown.length === 0 ? (
+                      <tr><td colSpan={2} className="text-center text-slate-400">데이터 없음</td></tr>
+                    ) : rowsForBreakdown.map((r) => (
+                      <tr key={r.name}><td>{r.name}</td><td>{r.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {(tab === 'covered' || tab === 'non_covered') && (
+              <div className="space-y-4">
+                {(() => {
+                  const chargeData = tab === 'covered' ? stats?.charges?.covered : stats?.charges?.non_covered;
+                  const rows = Object.entries(chargeData || {}).map(([name, v]: [string, any]) => ({
+                    name, total: v.total || 0, count: v.count || 0, avg: v.count > 0 ? Math.round(v.total / v.count) : 0,
+                  })).sort((a, b) => b.total - a.total);
+                  const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+                  return (
+                    <>
+                      {rows.length > 0 && (
+                        <StatsChartCard title={`${tab === 'covered' ? '급여' : '비급여'} 항목별 금액`}>
+                          <PieChart>
+                            <Pie data={rows.map(r => ({ name: r.name, count: r.total }))} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={100}
+                              label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                              {rows.map((_: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: any) => `${Number(v).toLocaleString()}원`} />
+                            <Legend />
+                          </PieChart>
+                        </StatsChartCard>
+                      )}
+                      <table className="tbl">
+                        <thead><tr><th>항목</th><th>총액</th><th>건수</th><th>건당 평균</th></tr></thead>
+                        <tbody>
+                          {rows.length === 0 ? (
+                            <tr><td colSpan={4} className="text-center text-slate-400">데이터 없음</td></tr>
+                          ) : (<>
+                            {rows.map(r => (
+                              <tr key={r.name}><td>{r.name}</td><td className="text-right">{r.total.toLocaleString()}원</td><td className="text-right">{r.count}</td><td className="text-right">{r.avg.toLocaleString()}원</td></tr>
+                            ))}
+                            <tr className="font-bold bg-gray-50"><td>합계</td><td className="text-right">{grandTotal.toLocaleString()}원</td><td /><td /></tr>
+                          </>)}
+                        </tbody>
+                      </table>
+                    </>
+                  );
+                })()}
               </div>
             )}
 

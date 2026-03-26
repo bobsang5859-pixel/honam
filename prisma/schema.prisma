@@ -309,6 +309,7 @@ model Patient {
   events                PatientEvent[]
   patient_disease_codes PatientDiseaseCode[]
   patient_treatments    PatientTreatment[]
+  charges               PatientCharge[]
 
   @@index([department_id, status])
   @@index([department_id, room_no, bed_no])
@@ -362,6 +363,7 @@ model WardRoom {
   capacity      Int      @default(6)
   sort_order    Int      @default(0)
   is_active     Boolean  @default(true)
+  is_hospice    Boolean  @default(false)
   created_at    DateTime @default(now())
   deleted_at    DateTime?
 
@@ -1180,4 +1182,23 @@ model TreatmentSupplyMap {
 
   @@unique([treatment_type_id, item_id])
   @@map("treatment_supply_maps")
+}
+
+model PatientCharge {
+  id           String    @id @default(uuid())
+  patient_id   String
+  category     String    // COVERED(급여) | NON_COVERED(비급여)
+  item_name    String    // 임종실, 기저귀, 영양제 등
+  amount       Float     @default(0)
+  charge_month String    // "2026-03" 형식
+  note         String    @default("")
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  deleted_at   DateTime?
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+
+  @@index([patient_id, charge_month])
+  @@index([category, charge_month])
+  @@map("patient_charges")
 }

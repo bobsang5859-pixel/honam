@@ -7,7 +7,6 @@ import path from 'path';
 import { prisma } from '../index';
 import { authMiddleware, requireMenuAccess, requirePermission, isCustomMenuUser, AuthRequest } from '../middleware/auth';
 import { audit } from '../utils/audit';
-import { syncPatientToExcel } from '../services/excel-sync';
 import { importPatientsFromBuffer } from '../services/patient-import';
 
 const router = Router();
@@ -26,8 +25,6 @@ const requirePatientManageMenu = requireMenuAccess('patient-manage', 'REQUEST_US
 const requirePatientStatsMenu = requireMenuAccess('patient-stats', 'PURCHASE_MANAGE', 'REQUEST_USE', 'STATS_VIEW');
 
 router.use((req: AuthRequest, res, next) => {
-  // 파일 감지 설정은 requirePermission으로만 처리 (메뉴 권한 체크 제외)
-  if (req.path.startsWith('/file-watcher')) return next();
   if (PATIENT_SCOPE_EXCLUDED_PREFIXES.some((prefix) => req.path.startsWith(prefix))) {
     return requirePatientStatsMenu(req, res, next);
   }
@@ -678,6 +675,40 @@ router.get('/room-config', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), 
   }
 });
 
+// 전체 병동의 임종실 목록 (빈 자리 포함)
+router.get('/hospice-rooms', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+  try {
+    const date = toDateOnly(String(req.query.date ?? new Date().toISOString()));
+    const rooms = await (prisma as any).wardRoom.findMany({
+      where: { is_hospice: true, is_active: true, deleted_at: null },
+      include: { department: { select: { id: true, name: true } } },
+      orderBy: [{ department: { name: 'asc' } }, { room_no: 'asc' }],
+    });
+    const result = [];
+    for (const room of rooms) {
+      await ensureBoardForDate(room.department_id, date);
+      const cells = await (prisma as any).wardRoomBoard.findMany({
+        where: { department_id: room.department_id, ward_room_id: room.id, board_date: date, deleted_at: null },
+        orderBy: { bed_no: 'asc' },
+      });
+      const emptyBeds = cells.filter((c: any) => !c.patient_name).map((c: any) => c.bed_no);
+      result.push({
+        id: room.id,
+        department_id: room.department_id,
+        department_name: room.department?.name,
+        room_no: room.room_no,
+        capacity: room.capacity,
+        empty_beds: emptyBeds,
+        occupied: room.capacity - emptyBeds.length,
+      });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: '서버 오류' });
+  }
+});
+
 router.put('/room-config/:departmentId', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
   const rows = Array.isArray(req.body?.rooms) ? req.body.rooms : [];
   try {
@@ -690,6 +721,7 @@ router.put('/room-config/:departmentId', requirePermission('REQUEST_USE'), async
         capacity: Math.max(1, Number(r.capacity ?? defaultCapacity)),
         sort_order: Number(r.sort_order ?? idx + 1),
         is_active: r.is_active !== false,
+        is_hospice: Boolean(r.is_hospice),
       }))
       .filter((r: any) => r.room_no.length > 0);
 
@@ -729,6 +761,7 @@ router.put('/room-config/:departmentId', requirePermission('REQUEST_USE'), async
             capacity: row.capacity,
             sort_order: row.sort_order,
             is_active: row.is_active,
+            is_hospice: row.is_hospice,
             deleted_at: row.is_active ? null : new Date(),
           },
         });
@@ -741,6 +774,7 @@ router.put('/room-config/:departmentId', requirePermission('REQUEST_USE'), async
             capacity: row.capacity,
             sort_order: row.sort_order,
             is_active: row.is_active,
+            is_hospice: row.is_hospice,
             deleted_at: row.is_active ? null : new Date(),
           },
         });
@@ -801,6 +835,17 @@ router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: Auth
   try {
     const before = await (prisma as any).wardRoomBoard.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ error: '대상을 찾을 수 없습니다.' });
+
+    // status만 변경하는 경우 (외출/외박/복귀)
+    const statusOnlyValues = ['OUTING', 'OVERNIGHT', 'ADMITTED'];
+    if (req.body.status && statusOnlyValues.includes(req.body.status) && !req.body.name && !req.body.chart_no && !req.body.patient_no && !req.body.patient_name) {
+      const updated = await (prisma as any).wardRoomBoard.update({
+        where: { id: req.params.id },
+        data: { status: String(req.body.status) },
+      });
+      await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'ward_room_boards', entity_id: updated.id, after: { status: updated.status } });
+      return res.json(updated);
+    }
 
     const patch = normalizePatient(req.body);
     validateProjectScope(patch.project_name, patch.project_region, patch.project_sigungu_office);
@@ -1143,7 +1188,6 @@ router.post('/admit', requirePermission('REQUEST_USE'), async (req: AuthRequest,
       } as any,
     });
     await audit({ actor_user_id: req.user!.id, action: 'CREATE', entity_type: 'patients', entity_id: patient.id });
-    syncPatientToExcel({ action: 'admit', patient }).catch(() => {});
     res.status(201).json(patient);
   } catch (e: any) {
     if (e?.message === 'PROJECT_SCOPE_REQUIRED') return res.status(400).json({ error: '사업명칭 입력 시 지역과 시군구청은 필수입니다.' });
@@ -1153,20 +1197,19 @@ router.post('/admit', requirePermission('REQUEST_USE'), async (req: AuthRequest,
   }
 });
 
-async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DEATH', req: AuthRequest, closedAt?: string, dischargeType?: string) {
+async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DEATH', req: AuthRequest, closedAt?: string, dischargeType?: string, dischargeReason?: string) {
   const patient = await (prisma as any).patient.findUnique({ where: { id: patientId } });
   if (!patient) throw new Error('NOT_FOUND');
   if (patient.status !== 'ADMITTED') throw new Error('INVALID_STATUS');
   const now = closedAt ? new Date(closedAt) : new Date();
-  const newStatus = eventType === 'DEATH' ? 'DECEASED' : 'DISCHARGED';
 
   const updated = await (prisma as any).patient.update({
     where: { id: patientId },
     data: {
-      status: newStatus,
+      status: 'DISCHARGED',
       discharged_at: now,
-      deceased_at: eventType === 'DEATH' ? now : null,
       ...(dischargeType ? { discharge_type: dischargeType } : {}),
+      ...(dischargeReason ? { note: [patient.note, `[퇴원사유] ${dischargeReason}`].filter(Boolean).join('\n') } : {}),
     },
   });
 
@@ -1175,12 +1218,12 @@ async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DE
       id: uuidv4(),
       patient_id: patientId,
       department_id: patient.department_id,
-      event_type: eventType,
+      event_type: 'DISCHARGE',
       event_date: now,
       room_no: patient.room_no ?? '',
       bed_no: patient.bed_no ?? null,
       prev_hospital: patient.prev_hospital ?? '',
-      memo: '',
+      memo: dischargeReason ?? '',
       created_by: req.user!.id,
     } as any,
   });
@@ -1194,7 +1237,7 @@ async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DE
       deleted_at: null,
     },
     data: {
-      status: newStatus,
+      status: 'DISCHARGED',
       patient_id: null,
       patient_no: '',
       chart_no: '',
@@ -1206,9 +1249,8 @@ async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DE
 
 router.post('/:id/discharge', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
   try {
-    const updated = await closePatientState(req.params.id, 'DISCHARGE', req, req.body?.discharged_at, req.body?.discharge_type);
+    const updated = await closePatientState(req.params.id, 'DISCHARGE', req, req.body?.discharged_at, req.body?.discharge_type, req.body?.discharge_reason);
     await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: updated.id, after: { status: 'DISCHARGED' } });
-    syncPatientToExcel({ action: 'discharge', patient: updated, closedAt: new Date() }).catch(() => {});
     res.json(updated);
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1218,11 +1260,11 @@ router.post('/:id/discharge', requirePermission('REQUEST_USE'), async (req: Auth
   }
 });
 
+// 하위호환: /death → discharge로 처리 (사유 "사망")
 router.post('/:id/death', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
   try {
-    const updated = await closePatientState(req.params.id, 'DEATH', req, req.body?.deceased_at);
-    await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: updated.id, after: { status: 'DECEASED' } });
-    syncPatientToExcel({ action: 'death', patient: updated, closedAt: new Date() }).catch(() => {});
+    const updated = await closePatientState(req.params.id, 'DISCHARGE', req, req.body?.deceased_at, undefined, '사망');
+    await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: updated.id, after: { status: 'DISCHARGED' } });
     res.json(updated);
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1253,79 +1295,98 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
     // 대상 병동 보드 준비
     await ensureBoardForDate(targetDeptId, date);
 
-    // 병실/자리 지정 시 유효성 검증
+    // 병실/자리 지정 시 유효성 검증 + 교환 대상 확인
+    let swapPatient: any = null;
     if (newRoomNo && newBedNo != null) {
       const room = await (prisma as any).wardRoom.findFirst({
         where: { department_id: targetDeptId, room_no: newRoomNo, deleted_at: null },
       });
       if (!room) return res.status(400).json({ error: `병실 ${newRoomNo}을 찾을 수 없습니다.` });
-      const occupied = await (prisma as any).wardRoomBoard.findFirst({
-        where: { board_date: date, department_id: targetDeptId, ward_room_id: room.id, bed_no: newBedNo, deleted_at: null, patient_name: { not: '' } },
+      const occupiedBoard = await (prisma as any).wardRoomBoard.findFirst({
+        where: { board_date: date, department_id: targetDeptId, ward_room_id: room.id, bed_no: newBedNo, deleted_at: null, patient_name: { not: '' }, patient_id: { not: patient.id } },
       });
-      if (occupied) return res.status(400).json({ error: `${newRoomNo} ${newBedNo}번 자리는 이미 사용 중입니다.` });
+      if (occupiedBoard?.patient_id) {
+        swapPatient = await (prisma as any).patient.findUnique({ where: { id: occupiedBoard.patient_id } });
+      }
     }
 
-    // PatientEvent: TRANSFER from current → target
+    const oldDeptId = patient.department_id;
+    const oldRoomNo = patient.room_no ?? '';
+    const oldBedNo = patient.bed_no;
+
+    // PatientEvent: TRANSFER
     await (prisma as any).patientEvent.create({
       data: {
         id: uuidv4(),
         patient_id: patient.id,
-        department_id: patient.department_id,
+        department_id: oldDeptId,
         event_type: 'TRANSFER',
         event_date: today,
-        room_no: patient.room_no ?? '',
-        bed_no: patient.bed_no ?? null,
-        memo,
+        room_no: oldRoomNo,
+        bed_no: oldBedNo ?? null,
+        memo: swapPatient ? `${memo} [교환: ${swapPatient.name}]`.trim() : memo,
         created_by: req.user!.id,
       },
     });
 
-    // Clear board record(s) for today in the old department
+    // Clear board record(s) for today
     const todayStr = today.toISOString().slice(0, 10);
     await (prisma as any).wardRoomBoard.updateMany({
       where: {
         patient_id: patient.id,
         board_date: { gte: new Date(`${todayStr}T00:00:00.000Z`), lte: new Date(`${todayStr}T23:59:59.999Z`) },
       },
-      data: {
-        patient_id: null,
-        patient_name: '',
-        patient_no: '',
-        chart_no: '',
-        status: 'DISCHARGED',
-      },
+      data: { patient_id: null, patient_name: '', patient_no: '', chart_no: '', status: 'DISCHARGED' },
     });
 
-    // Move patient to target department (+ room/bed if specified)
+    // 교환 대상이 있으면: 상대방을 현재 환자의 원래 자리로 이동
+    if (swapPatient && oldRoomNo && oldBedNo != null) {
+      // 상대방 보드 클리어
+      await (prisma as any).wardRoomBoard.updateMany({
+        where: {
+          patient_id: swapPatient.id,
+          board_date: { gte: new Date(`${todayStr}T00:00:00.000Z`), lte: new Date(`${todayStr}T23:59:59.999Z`) },
+        },
+        data: { patient_id: null, patient_name: '', patient_no: '', chart_no: '', status: 'DISCHARGED' },
+      });
+      // 상대방 Patient 업데이트 (원래 환자 자리로)
+      await (prisma as any).patient.update({
+        where: { id: swapPatient.id },
+        data: { department_id: oldDeptId, room_no: oldRoomNo, bed_no: oldBedNo },
+      });
+      // 상대방 보드 배치
+      const oldRoom = await (prisma as any).wardRoom.findFirst({
+        where: { department_id: oldDeptId, room_no: oldRoomNo, deleted_at: null },
+      });
+      if (oldRoom) {
+        await (prisma as any).wardRoomBoard.upsert({
+          where: { board_date_department_id_ward_room_id_bed_no: { board_date: date, department_id: oldDeptId, ward_room_id: oldRoom.id, bed_no: oldBedNo } },
+          create: { id: uuidv4(), board_date: date, department_id: oldDeptId, ward_room_id: oldRoom.id, room_no: oldRoomNo, bed_no: oldBedNo, patient_id: swapPatient.id, patient_name: swapPatient.name, patient_no: swapPatient.patient_no ?? '', chart_no: swapPatient.chart_no ?? '', status: 'ADMITTED' },
+          update: { patient_id: swapPatient.id, patient_name: swapPatient.name, patient_no: swapPatient.patient_no ?? '', chart_no: swapPatient.chart_no ?? '', status: 'ADMITTED' },
+        });
+      }
+      // 교환 이벤트 기록
+      await (prisma as any).patientEvent.create({
+        data: { id: uuidv4(), patient_id: swapPatient.id, department_id: targetDeptId, event_type: 'TRANSFER', event_date: today, room_no: newRoomNo, bed_no: newBedNo, memo: `자리교환: ${patient.name}`, created_by: req.user!.id },
+      });
+    }
+
+    // Move patient to target
     const updated = await (prisma as any).patient.update({
       where: { id: patient.id },
       data: { department_id: targetDeptId, room_no: newRoomNo || '', bed_no: newBedNo },
     });
 
-    // 병실/자리 지정 시 새 보드에 배치
+    // 새 보드에 배치
     if (newRoomNo && newBedNo != null) {
       const room = await (prisma as any).wardRoom.findFirst({
         where: { department_id: targetDeptId, room_no: newRoomNo, deleted_at: null },
       });
       if (room) {
         await (prisma as any).wardRoomBoard.upsert({
-          where: {
-            board_date_department_id_ward_room_id_bed_no: {
-              board_date: date, department_id: targetDeptId, ward_room_id: room.id, bed_no: newBedNo,
-            },
-          },
-          create: {
-            id: uuidv4(), board_date: date, department_id: targetDeptId, ward_room_id: room.id,
-            room_no: newRoomNo, bed_no: newBedNo,
-            patient_id: updated.id, patient_name: updated.name,
-            patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '',
-            status: 'ADMITTED',
-          },
-          update: {
-            patient_id: updated.id, patient_name: updated.name,
-            patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '',
-            status: 'ADMITTED',
-          },
+          where: { board_date_department_id_ward_room_id_bed_no: { board_date: date, department_id: targetDeptId, ward_room_id: room.id, bed_no: newBedNo } },
+          create: { id: uuidv4(), board_date: date, department_id: targetDeptId, ward_room_id: room.id, room_no: newRoomNo, bed_no: newBedNo, patient_id: updated.id, patient_name: updated.name, patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '', status: 'ADMITTED' },
+          update: { patient_id: updated.id, patient_name: updated.name, patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '', status: 'ADMITTED' },
         });
       }
     }
@@ -1336,6 +1397,54 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
     console.error(e);
     res.status(500).json({ error: '서버 오류' });
   }
+});
+
+// 환자별 이벤트 이력
+router.get('/:id/events', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+  try {
+    const events = await (prisma as any).patientEvent.findMany({
+      where: { patient_id: req.params.id, deleted_at: null },
+      orderBy: { event_date: 'desc' },
+      take: 20,
+      include: { department: { select: { name: true } } },
+    });
+    res.json(events);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: '서버 오류' });
+  }
+});
+
+// 환자별 급여/비급여 조회
+router.get('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+  try {
+    const month = String(req.query.month ?? new Date().toISOString().slice(0, 7));
+    const charges = await (prisma as any).patientCharge.findMany({
+      where: { patient_id: req.params.id, charge_month: month, deleted_at: null },
+      orderBy: [{ category: 'asc' }, { item_name: 'asc' }],
+    });
+    res.json(charges);
+  } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+// 환자별 급여/비급여 일괄 저장
+router.put('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+  try {
+    const { month, items } = req.body;
+    if (!month || !Array.isArray(items)) return res.status(400).json({ error: 'month와 items 필수' });
+    const patientId = req.params.id;
+    for (const item of items) {
+      const where = { patient_id: patientId, charge_month: month, category: item.category, item_name: item.item_name, deleted_at: null };
+      const existing = await (prisma as any).patientCharge.findFirst({ where });
+      if (existing) {
+        await (prisma as any).patientCharge.update({ where: { id: existing.id }, data: { amount: Number(item.amount ?? 0), note: item.note ?? '' } });
+      } else if (Number(item.amount ?? 0) > 0) {
+        await (prisma as any).patientCharge.create({ data: { id: uuidv4(), patient_id: patientId, category: item.category, item_name: item.item_name, amount: Number(item.amount ?? 0), charge_month: month, note: item.note ?? '' } });
+      }
+    }
+    const charges = await (prisma as any).patientCharge.findMany({ where: { patient_id: patientId, charge_month: month, deleted_at: null }, orderBy: [{ category: 'asc' }, { item_name: 'asc' }] });
+    res.json(charges);
+  } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });
 
 router.post('/:id/readmit', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
@@ -1456,7 +1565,6 @@ router.put('/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, re
     }
 
     await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: after.id, before: { id: before.id }, after: { id: after.id } });
-    syncPatientToExcel({ action: 'update', patient: after }).catch(() => {});
     res.json(after);
   } catch (e: any) {
     if (e?.message === 'PROJECT_SCOPE_REQUIRED') return res.status(400).json({ error: '사업명칭 입력 시 지역과 시군구청은 필수입니다.' });
@@ -1785,11 +1893,11 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
     const prevAvgOccRate = capacityTotal > 0 ? Number(((prevAvgOcc / capacityTotal) * 100).toFixed(1)) : 0;
 
     const admissionEvents = currentEvents.filter((e: any) => e.event_type === 'ADMISSION');
-    const dischargeEvents = currentEvents.filter((e: any) => e.event_type === 'DISCHARGE');
-    const deathEvents = currentEvents.filter((e: any) => e.event_type === 'DEATH');
+    const dischargeEvents = currentEvents.filter((e: any) => e.event_type === 'DISCHARGE' || e.event_type === 'DEATH');
+    const deathEvents: any[] = []; // 사망 통계 제거 — 퇴원+사유로 통합
     const prevAdmissionEvents = prevEvents.filter((e: any) => e.event_type === 'ADMISSION');
-    const prevDischargeEvents = prevEvents.filter((e: any) => e.event_type === 'DISCHARGE');
-    const prevDeathEvents = prevEvents.filter((e: any) => e.event_type === 'DEATH');
+    const prevDischargeEvents = prevEvents.filter((e: any) => e.event_type === 'DISCHARGE' || e.event_type === 'DEATH');
+    const prevDeathEvents: any[] = [];
 
     const calcAlos = (events: any[]) => {
       const rows = events.filter((e: any) => e.patient?.admitted_at);
@@ -1973,7 +2081,7 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
       comparison: {
         admitted_count: { current: admissionEvents.length, previous: prevAdmissionEvents.length, diff_pct: pct(admissionEvents.length, prevAdmissionEvents.length) },
         discharged_count: { current: dischargeEvents.length, previous: prevDischargeEvents.length, diff_pct: pct(dischargeEvents.length, prevDischargeEvents.length) },
-        deceased_count: { current: deathEvents.length, previous: prevDeathEvents.length, diff_pct: pct(deathEvents.length, prevDeathEvents.length) },
+        hospice_count: { current: currentEvents.filter((e: any) => e.event_type === 'TRANSFER' && (e.memo || '').includes('임종실')).length, previous: prevEvents.filter((e: any) => e.event_type === 'TRANSFER' && (e.memo || '').includes('임종실')).length, diff_pct: pct(currentEvents.filter((e: any) => e.event_type === 'TRANSFER' && (e.memo || '').includes('임종실')).length, prevEvents.filter((e: any) => e.event_type === 'TRANSFER' && (e.memo || '').includes('임종실')).length) },
         avg_los: { current: alosCurrent, previous: alosPrev, diff_pct: pct(alosCurrent, alosPrev) },
         occupancy_rate: { current: avgOccRate, previous: prevAvgOccRate, diff_pct: pct(avgOccRate, prevAvgOccRate) },
       },
@@ -2087,7 +2195,34 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
             return acc;
           }, {});
         })(),
+        discharge_reason: (() => {
+          const discharged = currentEvents.filter((e: any) => e.event_type === 'DISCHARGE' || e.event_type === 'DEATH');
+          return discharged.reduce((acc: any, e: any) => {
+            const key = (e.memo ?? '').trim() || '미입력';
+            acc[key] = (acc[key] ?? 0) + 1;
+            return acc;
+          }, {});
+        })(),
       },
+      // 급여/비급여 집계
+      charges: await (async () => {
+        try {
+          const monthFrom = dateFrom.toISOString().slice(0, 7);
+          const monthTo = dateTo.toISOString().slice(0, 7);
+          const allCharges: any[] = await (prisma as any).patientCharge.findMany({
+            where: { deleted_at: null, charge_month: { gte: monthFrom, lte: monthTo }, ...(departmentId ? { patient: { department_id: departmentId } } : {}) },
+          });
+          const covered: Record<string, { total: number; count: number }> = {};
+          const nonCovered: Record<string, { total: number; count: number }> = {};
+          for (const c of allCharges) {
+            const bucket = c.category === 'COVERED' ? covered : nonCovered;
+            if (!bucket[c.item_name]) bucket[c.item_name] = { total: 0, count: 0 };
+            bucket[c.item_name].total += Number(c.amount);
+            bucket[c.item_name].count += 1;
+          }
+          return { covered, non_covered: nonCovered };
+        } catch { return { covered: {}, non_covered: {} }; }
+      })(),
       departments: Array.from(byDept.values()),
     });
   } catch (e) {
@@ -2570,39 +2705,6 @@ router.post('/import', requirePermission('REQUEST_USE'), upload.single('file'), 
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: '파일 처리 오류' });
-  }
-});
-
-// ── 파일 자동감지 설정 API ────────────────────────────────────────────────
-import { getFileWatcherStatus, updateFileWatcherConfig } from '../services/file-watcher';
-
-router.get('/file-watcher/config', requirePermission('SYSTEM_ADMIN', 'REQUEST_USE', 'PURCHASE_MANAGE'), async (_req, res) => {
-  try {
-    const status = await getFileWatcherStatus();
-    res.json(status);
-  } catch (e) { res.status(500).json({ error: '서버 오류' }); }
-});
-
-router.put('/file-watcher/config', requirePermission('SYSTEM_ADMIN', 'REQUEST_USE', 'PURCHASE_MANAGE'), async (req: AuthRequest, res) => {
-  const { file_path, dept_id, enabled } = req.body;
-  try {
-    await updateFileWatcherConfig(String(file_path ?? ''), String(dept_id ?? ''), Boolean(enabled));
-    const status = await getFileWatcherStatus();
-    res.json(status);
-  } catch (e) { res.status(500).json({ error: '서버 오류' }); }
-});
-
-// 엑셀 파일 업로드 → 서버에 저장 후 경로 반환 (기존 upload 인스턴스 재사용)
-router.post('/file-watcher/upload', requirePermission('SYSTEM_ADMIN', 'REQUEST_USE', 'PURCHASE_MANAGE'), upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: '파일이 없습니다' });
-    const uploadDir = path.join(process.cwd(), 'uploads', 'excel-watch');
-    fs.mkdirSync(uploadDir, { recursive: true });
-    const filePath = path.join(uploadDir, 'patients.xlsx');
-    fs.writeFileSync(filePath, req.file.buffer);
-    res.json({ file_path: filePath });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message || '업로드 실패' });
   }
 });
 

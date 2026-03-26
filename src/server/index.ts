@@ -42,6 +42,10 @@ prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;').catch(() => {});
 prisma.$executeRawUnsafe(`UPDATE departments SET name='총무구매 창고' WHERE code='CENTRAL' AND name='중앙창고'`).catch(() => {});
 prisma.$executeRawUnsafe(`UPDATE inventory_locations SET name='총무구매 창고' WHERE code='CENTRAL' AND name='중앙창고'`).catch(() => {});
 
+// DECEASED → DISCHARGED 마이그레이션 (사망 상태 제거, 퇴원+사유로 통합)
+prisma.$executeRawUnsafe(`UPDATE patients SET status='DISCHARGED', note=COALESCE(note,'') || CASE WHEN note IS NOT NULL AND note!='' THEN char(10) ELSE '' END || '[퇴원사유] 사망' WHERE status='DECEASED'`).catch(() => {});
+prisma.$executeRawUnsafe(`UPDATE ward_room_boards SET status='DISCHARGED' WHERE status='DECEASED'`).catch(() => {});
+
 // ── 권한 마이그레이션: 기존 세분화 권한 → 탭 단위 5개 권한 (idempotent) ──
 (async () => {
   try {
@@ -225,12 +229,9 @@ cron.schedule('0 2 * * *', async () => {
   } catch (e) { console.error('[AutoBackup] Failed:', e); }
 });
 
-import { startFileWatcher } from './services/file-watcher';
-
 const SERVER_HOST = process.env.SERVER_HOST || '127.0.0.1';
 app.listen(PORT, SERVER_HOST, () => {
   console.log(`Server running on ${SERVER_HOST}:${PORT}`);
-  startFileWatcher().catch(e => console.error('[FileWatcher] 초기 시작 실패:', e.message));
 });
 
 export default app;

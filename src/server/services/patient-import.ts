@@ -24,6 +24,7 @@ const IMPORT_HEADER_MAP: Record<string, string> = {
   '성별': 'gender',
   '거동상태': 'mobility_type', '거동유형': 'mobility_type', '거동': 'mobility_type', '기동상태': 'mobility_type',
   '보험종류': 'insurance_type', '보험유형': 'insurance_type', '보험': 'insurance_type',
+  '본인부담경감': 'copay_reduction', '경감유형': 'copay_reduction', '산정특례유형': 'copay_reduction',
   '환자군': 'patient_group', '환자등급': 'patient_group', '등급': 'patient_group',
   '주상병': 'main_disease_code', '주상병코드': 'main_disease_code',
   '산정특례': 'disease_code', '산정특례코드': 'disease_code', 'V코드': 'disease_code',
@@ -69,10 +70,16 @@ const toInsurance = (v: string) => {
     '의료급여2종': 'MEDICAL_2', '의료급여 2종': 'MEDICAL_2',
     '산재': 'WORKERS_COMP', '산재보험': 'WORKERS_COMP',
     '자동차': 'AUTO_INS', '자동차보험': 'AUTO_INS',
-    '본인부담중증': 'HEALTH_REDUCED_SEVERE', '본인부담경감(중증질환)': 'HEALTH_REDUCED_SEVERE',
-    '본인부담희귀': 'HEALTH_REDUCED_RARE', '본인부담경감(희귀난치성)': 'HEALTH_REDUCED_RARE',
   };
   return m[v.trim()] || 'HEALTH';
+};
+const toCopayReduction = (v: string) => {
+  const m: Record<string, string> = {
+    '중증질환': 'SEVERE', '본인부담중증': 'SEVERE', '본인부담경감(중증질환)': 'SEVERE', '중증': 'SEVERE',
+    '희귀난치성': 'RARE', '본인부담희귀': 'RARE', '본인부담경감(희귀난치성)': 'RARE', '희귀': 'RARE',
+    '해당없음': 'NONE', '없음': 'NONE',
+  };
+  return m[v.trim()] || 'NONE';
 };
 const toGroup = (v: string) => (({ '최고도': 'HIGHEST', '고도': 'HIGH', '중도': 'MEDIUM', '경도': 'LOW', '선택': 'SELECT' } as Record<string,string>)[v.trim()] || 'UNRATED');
 const toSpecializations = (v: string): string[] => {
@@ -568,6 +575,7 @@ async function importSingleSheet(
     const gender         = toGender(String(gc(row, 'gender') ?? '').trim());
     const mobility_type  = toMobility(String(gc(row, 'mobility_type') ?? '').trim());
     const insurance_type = toInsurance(String(gc(row, 'insurance_type') ?? '').trim());
+    const copay_reduction = toCopayReduction(String(gc(row, 'copay_reduction') ?? '').trim());
     const patient_group  = toGroup(String(gc(row, 'patient_group') ?? '').trim());
     const specializations = toSpecializations(String(gc(row, 'specializations') ?? '').trim());
     const infection_strain = String(gc(row, 'infection_strain') ?? '').trim();
@@ -629,6 +637,7 @@ async function importSingleSheet(
           data: {
             mobility_type,
             insurance_type,
+            copay_reduction,
             patient_group,
             // 병동 변경 시: 새 병동 + 병실/병상 초기화 (배치는 별도)
             ...(deptChanged
@@ -743,6 +752,7 @@ async function importSingleSheet(
             gender,
             mobility_type,
             insurance_type,
+            copay_reduction,
             patient_group,
             specializations: spec,
             infection_strain,

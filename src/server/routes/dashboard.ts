@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../index';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { getCachedAlerts } from '../services/health-check';
 
 const router = Router();
 router.use(authMiddleware);
@@ -198,6 +199,20 @@ router.get('/summary', async (req: AuthRequest, res) => {
         status: r.status,
         submitted_at: r.submitted_at,
       })),
+      ...(() => {
+        const { alerts, last_checked_at } = getCachedAlerts();
+        const isAdmin = req.user?.permissions.some(p => ['SYSTEM_ADMIN', 'PURCHASE_MANAGE'].includes(p));
+        const visibleAlerts = isAdmin ? alerts : [];
+        return {
+          alerts: visibleAlerts,
+          alert_summary: {
+            critical: visibleAlerts.filter(a => a.severity === 'critical').length,
+            warning: visibleAlerts.filter(a => a.severity === 'warning').length,
+            info: visibleAlerts.filter(a => a.severity === 'info').length,
+          },
+          alerts_last_checked_at: last_checked_at,
+        };
+      })(),
     });
   } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });

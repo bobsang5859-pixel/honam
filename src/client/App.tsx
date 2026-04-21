@@ -25,6 +25,8 @@ const ExpenseScopesPage     = lazy(() => import('./pages/ExpenseScopesPage'));
 const PatientStatsPage   = lazy(() => import('./pages/PatientStatsPage'));
 const ComplaintsPage     = lazy(() => import('./pages/ComplaintsPage'));
 const PatientManagePage  = lazy(() => import('./pages/PatientManagePage'));
+const PatientChargesPage = lazy(() => import('./pages/PatientChargesPage'));
+const ReferralIntakePage = lazy(() => import('./pages/ReferralIntakePage'));
 const DeptCategoryPage      = lazy(() => import('./pages/DeptCategoryPage'));
 const EquipmentRequestPage  = lazy(() => import('./pages/EquipmentRequestPage'));
 const MyEquipmentPage       = lazy(() => import('./pages/MyEquipmentPage'));
@@ -261,6 +263,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute perm="PATIENT_MANAGE" menuKey="patient-manage">
               <Suspense fallback={<Loading />}><PatientManagePage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="patient-charges"
+          element={
+            <ProtectedRoute perm="PATIENT_MANAGE" menuKey="patient-charges">
+              <Suspense fallback={<Loading />}><PatientChargesPage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="referral-intake"
+          element={
+            <ProtectedRoute perm="PATIENT_MANAGE" menuKey="referral-intake">
+              <Suspense fallback={<Loading />}><ReferralIntakePage /></Suspense>
             </ProtectedRoute>
           }
         />

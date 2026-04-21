@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../index';
-import { requirePermission, AuthRequest } from '../middleware/auth';
+import { authMiddleware, requirePermission, AuthRequest } from '../middleware/auth';
 import { audit } from '../utils/audit';
 
 const router = Router();
+router.use(authMiddleware);
 
 // 목록 조회
 router.get('/', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN'), async (req: AuthRequest, res) => {

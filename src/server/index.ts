@@ -42,6 +42,12 @@ prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;').catch(() => {});
 prisma.$executeRawUnsafe(`UPDATE departments SET name='총무구매 창고' WHERE code='CENTRAL' AND name='중앙창고'`).catch(() => {});
 prisma.$executeRawUnsafe(`UPDATE inventory_locations SET name='총무구매 창고' WHERE code='CENTRAL' AND name='중앙창고'`).catch(() => {});
 
+// 보험유형 분리: HEALTH_REDUCED_SEVERE/RARE → HEALTH + copay_reduction (idempotent)
+prisma.$executeRawUnsafe(`UPDATE patients SET copay_reduction='SEVERE', insurance_type='HEALTH' WHERE insurance_type='HEALTH_REDUCED_SEVERE'`).catch(() => {});
+prisma.$executeRawUnsafe(`UPDATE patients SET copay_reduction='RARE', insurance_type='HEALTH' WHERE insurance_type='HEALTH_REDUCED_RARE'`).catch(() => {});
+prisma.$executeRawUnsafe(`UPDATE ward_room_boards SET copay_reduction='SEVERE', insurance_type='HEALTH' WHERE insurance_type='HEALTH_REDUCED_SEVERE'`).catch(() => {});
+prisma.$executeRawUnsafe(`UPDATE ward_room_boards SET copay_reduction='RARE', insurance_type='HEALTH' WHERE insurance_type='HEALTH_REDUCED_RARE'`).catch(() => {});
+
 // DECEASED → DISCHARGED 마이그레이션 (사망 상태 제거, 퇴원+사유로 통합)
 prisma.$executeRawUnsafe(`UPDATE patients SET status='DISCHARGED', note=COALESCE(note,'') || CASE WHEN note IS NOT NULL AND note!='' THEN char(10) ELSE '' END || '[퇴원사유] 사망' WHERE status='DECEASED'`).catch(() => {});
 prisma.$executeRawUnsafe(`UPDATE ward_room_boards SET status='DISCHARGED' WHERE status='DECEASED'`).catch(() => {});
@@ -153,6 +159,8 @@ import stockoutStatsRoutes         from './routes/stockout-stats';
 import hiraApiRoutes               from './routes/hira-api';
 import hiraDiseaseStatsRoutes      from './routes/hira-disease-stats';
 import complaintRoutes             from './routes/complaints';
+import patientChargeRoutes         from './routes/patient-charges';
+import referralRoutes              from './routes/referral';
 
 app.use('/api/auth',           authRoutes);
 app.use('/api/departments',    departmentRoutes);
@@ -196,6 +204,8 @@ app.use('/api/stockout-stats',   stockoutStatsRoutes);
 app.use('/api/hira',             hiraApiRoutes);
 app.use('/api/hira-disease-stats', hiraDiseaseStatsRoutes);
 app.use('/api/complaints',        complaintRoutes);
+app.use('/api/patient-charges',   patientChargeRoutes);
+app.use('/api/referral',          referralRoutes);
 
 // Static uploads
 const uploadsDir = path.join(process.env.USER_DATA_PATH || '.', 'uploads');
@@ -231,9 +241,18 @@ cron.schedule('0 2 * * *', async () => {
   } catch (e) { console.error('[AutoBackup] Failed:', e); }
 });
 
+// Health check cron
+import { runHealthChecks } from './services/health-check';
+// 긴급 검사: 매 시간
+cron.schedule('0 * * * *', () => { runHealthChecks('critical').catch(e => console.error('[HealthCheck] cron error:', e)); });
+// 전체 검사: 매일 02:30 (백업 직후)
+cron.schedule('30 2 * * *', () => { runHealthChecks('all').catch(e => console.error('[HealthCheck] cron error:', e)); });
+
 const SERVER_HOST = process.env.SERVER_HOST || '127.0.0.1';
 app.listen(PORT, SERVER_HOST, () => {
   console.log(`Server running on ${SERVER_HOST}:${PORT}`);
+  // 서버 시작 시 전체 검사 1회 실행
+  setTimeout(() => { runHealthChecks('all').catch(e => console.error('[HealthCheck] init error:', e)); }, 3000);
 });
 
 export default app;

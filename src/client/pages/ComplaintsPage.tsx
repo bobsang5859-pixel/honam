@@ -65,7 +65,7 @@ export default function ComplaintsPage() {
 
   return (
     <div>
-      <PageHeader icon={MessageSquare} title="민원 · 상담 관리" subtitle="민원 및 상담 접수/처리" />
+      <PageHeader icon={MessageSquare} title="민원 · 상담 관리" description="민원 및 상담 접수/처리" />
 
       <div className="flex items-center gap-3 mb-4">
         <select className="input text-sm" value={filter.type} onChange={e => setFilter(f => ({ ...f, type: e.target.value }))}>

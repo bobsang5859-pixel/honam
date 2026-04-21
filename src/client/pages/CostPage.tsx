@@ -218,7 +218,7 @@ export default function CostPage() {
                   <table className="tbl">
                     <tbody>
                       {Object.entries(integratedStats?.breakdown?.insurance_type || {}).sort(([, a], [, b]) => Number(b) - Number(a)).map(([k, v]) => {
-                        const labels: Record<string, string> = { HEALTH: '건강보험(일반)', HEALTH_REDUCED_SEVERE: '본인부담경감(중증)', HEALTH_REDUCED_RARE: '본인부담경감(희귀)', MEDICAL_1: '의료급여 1종', MEDICAL_2: '의료급여 2종', WORKERS_COMP: '산재보험', AUTO_INS: '자동차보험' };
+                        const labels: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여 1종', MEDICAL_2: '의료급여 2종', WORKERS_COMP: '산재보험', AUTO_INS: '자동차보험' };
                         return <tr key={k}><td className="text-gray-500">{labels[k] ?? k}</td><td className="text-right font-semibold">{Number(v)}명</td></tr>;
                       })}
                     </tbody>

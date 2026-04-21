@@ -10,7 +10,7 @@ import {
   Ruler, CalendarClock, HeartPulse, Flame, CheckCircle2, FileText,
   PackageCheck, PackageOpen, Boxes, ClipboardList, Monitor, PenLine,
   ArrowLeftRight, Wrench, ClipboardCheck, PieChart, User, Users,
-  ScrollText, Settings, LogOut, Menu, X, ChevronDown, MessageSquare,
+  ScrollText, Settings, LogOut, Menu, X, ChevronDown, MessageSquare, CreditCard, FileInput,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -45,6 +45,8 @@ const MENU_SECTIONS: MenuSection[] = [
       { key: 'treatment-types',    path: '/treatment-types',    label: '처치유형', icon: HeartPulse,    perm: 'BASIC_MANAGE' },
       { key: 'incineration',       path: '/incineration',       label: '소각료',   icon: Flame,         perm: 'BASIC_MANAGE' },
       { key: 'patient-manage',     path: '/patient-manage',     label: '환자관리', icon: User,          perm: 'PATIENT_MANAGE' },
+      { key: 'patient-charges',    path: '/patient-charges',    label: '수납관리', icon: CreditCard,    perm: 'PATIENT_MANAGE' },
+      { key: 'referral-intake',    path: '/referral-intake',    label: '의뢰서 접수', icon: FileInput,   perm: 'PATIENT_MANAGE' },
     ],
   },
   {

@@ -9,6 +9,8 @@ export type MenuRule = {
 
 export function hasPermission(user: AuthUser | null | undefined, perm?: string, anyPerm?: string[]) {
   if (!user) return false;
+  // SYSTEM_ADMIN은 모든 권한 통과
+  if (user.permissions.includes('SYSTEM_ADMIN')) return true;
   if (perm && !user.permissions.includes(perm)) return false;
   if (anyPerm && anyPerm.length > 0 && !anyPerm.some((p) => user.permissions.includes(p))) return false;
   return true;

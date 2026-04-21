@@ -90,6 +90,7 @@ interface BoardCell {
   gender: string;
   mobility_type: string;
   insurance_type: string;
+  copay_reduction: string;
   specializations: string[];
   infection_strain: string;
   period_type: string;
@@ -192,20 +193,68 @@ function GroupedSelectField({
   );
 }
 
+function SearchableSelect({
+  value, onChange, options, placeholder = '검색...',
+}: { value: string; onChange: (v: string) => void; options: { v: string; l: string }[]; placeholder?: string }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  const selectedLabel = options.find(o => o.v === value)?.l || '';
+  const filtered = query
+    ? options.filter(o => o.l.toLowerCase().includes(query.toLowerCase()) || o.v.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => { setOpen(!open); setQuery(''); }}
+        className="input h-10 text-sm text-left truncate w-full flex items-center justify-between gap-1">
+        <span className={value ? 'text-slate-700' : 'text-slate-400'}>{value ? selectedLabel : placeholder}</span>
+        <span className="text-slate-400 text-xs">▼</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input type="text" autoFocus value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="코드 또는 질환명 검색..."
+              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div className="overflow-y-auto max-h-48">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-slate-400 text-center">검색 결과 없음</div>
+            ) : filtered.map(o => (
+              <button key={o.v} type="button"
+                onClick={() => { onChange(o.v); setOpen(false); setQuery(''); }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors truncate
+                  ${o.v === value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700'}`}>
+                {o.l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const INSURANCE_GROUPS = [
   {
     label: '건강보험',
     options: [
-      { v: 'HEALTH', l: '일반' },
-      { v: 'HEALTH_REDUCED_SEVERE', l: '본인부담경감 (중증질환)' },
-      { v: 'HEALTH_REDUCED_RARE', l: '본인부담경감 (희귀난치성)' },
+      { v: 'HEALTH', l: '건강보험' },
     ],
   },
   {
     label: '의료급여',
     options: [
-      { v: 'MEDICAL_1', l: '1종' },
-      { v: 'MEDICAL_2', l: '2종' },
+      { v: 'MEDICAL_1', l: '의료급여 1종' },
+      { v: 'MEDICAL_2', l: '의료급여 2종' },
     ],
   },
   {
@@ -214,6 +263,12 @@ const INSURANCE_GROUPS = [
       { v: 'AUTO_INS', l: '자동차보험' },
     ],
   },
+];
+
+const COPAY_REDUCTION_OPTIONS = [
+  { v: 'NONE', l: '해당없음' },
+  { v: 'SEVERE', l: '중증질환' },
+  { v: 'RARE', l: '희귀난치성' },
 ];
 
 const SPECIALIZATION_OPTIONS = [
@@ -241,13 +296,16 @@ const CODE_TYPE_LABEL: Record<string, string> = {
 const valueLabel = {
   mobility_type: { BEDRIDDEN: '와상', AMBULATORY: '거동' } as Record<string, string>,
   insurance_type: {
-    HEALTH: '건강보험 (일반)',
-    HEALTH_REDUCED_SEVERE: '건강보험 본인부담경감 (중증질환)',
-    HEALTH_REDUCED_RARE: '건강보험 본인부담경감 (희귀난치성)',
+    HEALTH: '건강보험',
     MEDICAL_1: '의료급여 1종',
     MEDICAL_2: '의료급여 2종',
     WORKERS_COMP: '산재보험',
     AUTO_INS: '자동차보험',
+  } as Record<string, string>,
+  copay_reduction: {
+    NONE: '',
+    SEVERE: '중증질환',
+    RARE: '희귀난치성',
   } as Record<string, string>,
   patient_group: {
     HIGHEST: '최고도',
@@ -309,6 +367,7 @@ export default function PatientManagePage() {
     gender: 'F',
     mobility_type: 'BEDRIDDEN',
     insurance_type: 'HEALTH',
+    copay_reduction: 'NONE',
     patient_group: 'UNRATED',
     specializations: [] as string[],
     infection_strain: '',
@@ -350,6 +409,7 @@ export default function PatientManagePage() {
   const [chargeMonth, setChargeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [chargeItems, setChargeItems] = useState<{ category: string; item_name: string; amount: number }[]>([]);
   const [chargeSaving, setChargeSaving] = useState(false);
+  const [chargeLoadedFor, setChargeLoadedFor] = useState(''); // 어떤 환자의 데이터가 로드됐는지 추적
   const COVERED_ITEMS = ['임종실', '고빈도흉벽', '산소', '가온가습고유량'];
   const NON_COVERED_ITEMS = ['기저귀', '간병', '영양제', '상급병실료', '엠블비', '도수', '기타/약품비'];
   const loadCharges = async (patientId: string, month: string) => {
@@ -360,10 +420,19 @@ export default function PatientManagePage() {
         ...NON_COVERED_ITEMS.map(name => ({ category: 'NON_COVERED', item_name: name, amount: (data || []).find((c: any) => c.category === 'NON_COVERED' && c.item_name === name)?.amount || 0 })),
       ];
       setChargeItems(items);
-    } catch { setChargeItems([...COVERED_ITEMS.map(n => ({ category: 'COVERED', item_name: n, amount: 0 })), ...NON_COVERED_ITEMS.map(n => ({ category: 'NON_COVERED', item_name: n, amount: 0 }))]); }
+      setChargeLoadedFor(patientId);
+    } catch {
+      setChargeItems([...COVERED_ITEMS.map(n => ({ category: 'COVERED', item_name: n, amount: 0 })), ...NON_COVERED_ITEMS.map(n => ({ category: 'NON_COVERED', item_name: n, amount: 0 }))]);
+      setChargeLoadedFor(patientId);
+    }
   };
   const saveCharges = async () => {
     if (!selectedCell?.patient_id) return;
+    // 현재 로드된 금액 데이터가 다른 환자 것이면 저장 차단
+    if (chargeLoadedFor && chargeLoadedFor !== selectedCell.patient_id) {
+      loadCharges(selectedCell.patient_id, chargeMonth);
+      return;
+    }
     setChargeSaving(true);
     try {
       await api(`/patients/${selectedCell.patient_id}/charges`, { method: 'PUT', body: JSON.stringify({ month: chargeMonth, items: chargeItems }) });
@@ -684,6 +753,7 @@ export default function PatientManagePage() {
           gender: selectedCell.gender,
           mobility_type: selectedCell.mobility_type,
           insurance_type: selectedCell.insurance_type,
+          copay_reduction: selectedCell.copay_reduction || 'NONE',
           specializations: selectedCell.specializations,
           infection_strain: selectedCell.infection_strain,
           period_type: selectedCell.period_type,
@@ -709,6 +779,7 @@ export default function PatientManagePage() {
           discharge_type: selectedCell.discharge_type || '',
           note: selectedCell.note,
           status: selectedCell.status,
+          ...(selectedCell.admitted_at ? { admitted_at: selectedCell.admitted_at } : {}),
         }),
       });
       // V코드가 있고 실제 환자와 연결된 경우, 환자 레코드에도 V코드 정보 저장
@@ -854,6 +925,7 @@ export default function PatientManagePage() {
       gender: 'F',
       mobility_type: 'BEDRIDDEN',
       insurance_type: 'HEALTH',
+      copay_reduction: 'NONE',
       patient_group: 'UNRATED',
       specializations: [],
       infection_strain: '',
@@ -1397,6 +1469,7 @@ export default function PatientManagePage() {
                           key={cell.id}
                           onClick={() => {
                             const linked = cell.patient_id ? mergedPatients.find(p => p.id === cell.patient_id) : null;
+                            setChargeLoadedFor(''); // 환자 변경 시 금액 데이터 무효화
                             setSelectedCell({
                               ...cell,
                               period_start_date: period.start,
@@ -1417,7 +1490,7 @@ export default function PatientManagePage() {
                         >
                           <div className="text-[11px] text-slate-500">{cell.bed_no}번 자리</div>
                           <div className="text-sm font-bold truncate">{cell.patient_name || '빈자리'}</div>
-                          <div className="text-[11px] text-slate-600 truncate">{cell.patient_name ? `${cell.gender === 'F' ? '여' : cell.gender === 'M' ? '남' : '-'} · ${toLabel('insurance_type', cell.insurance_type)} · ${toLabel('patient_group', cell.patient_group)}` : '\u00A0'}</div>
+                          <div className="text-[11px] text-slate-600 truncate">{cell.patient_name ? `${cell.gender === 'F' ? '여' : cell.gender === 'M' ? '남' : '-'} · ${toLabel('insurance_type', cell.insurance_type)}${cell.copay_reduction && cell.copay_reduction !== 'NONE' ? `(${toLabel('copay_reduction', cell.copay_reduction)})` : ''} · ${toLabel('patient_group', cell.patient_group)}` : '\u00A0'}</div>
                           {cell.infection_strain && <div className="text-[10px] text-red-600 font-semibold">{cell.infection_strain}</div>}
                           {(cell.status === 'OUTING' || cell.status === 'OVERNIGHT') && <div className="text-[10px] text-indigo-600 font-semibold">{cell.status === 'OUTING' ? '외출' : '외박'}</div>}
                         </button>
@@ -1558,7 +1631,7 @@ export default function PatientManagePage() {
                   <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold">{selectedCell.room_no} {selectedCell.bed_no}번</span>
                   {selectedCell.chart_no && <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-slate-600">{selectedCell.chart_no}</span>}
                   {selectedCell.gender && <span className="text-[10px] px-2 py-0.5 rounded bg-green-100 text-green-700">{selectedCell.gender === 'F' ? '여' : '남'} · {toLabel('mobility_type', selectedCell.mobility_type)}</span>}
-                  {selectedCell.insurance_type && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-700">{toLabel('insurance_type', selectedCell.insurance_type)} · {toLabel('patient_group', selectedCell.patient_group)}</span>}
+                  {selectedCell.insurance_type && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-700">{toLabel('insurance_type', selectedCell.insurance_type)}{selectedCell.copay_reduction && selectedCell.copay_reduction !== 'NONE' ? ` (${toLabel('copay_reduction', selectedCell.copay_reduction)})` : ''} · {toLabel('patient_group', selectedCell.patient_group)}</span>}
                   {selectedCell.period_type && <span className="text-[10px] px-2 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold">{selectedCell.period_type === 'PNEUMONIA' ? '폐렴' : '패혈증'}{selectedCell.period_phase === 'START' ? ' (진행중)' : selectedCell.period_phase === 'END' ? ' (종료)' : ''}</span>}
                 </div>
               </div>
@@ -1573,7 +1646,7 @@ export default function PatientManagePage() {
                 { label: '보호자·사업', icon: '📞', active: 'border-purple-500 text-purple-600' },
                 { label: '환자통계', icon: '📊', active: 'border-slate-500 text-slate-600' },
               ].map((tab, i) => (
-                <button key={i} onClick={() => { setCellEditTab(i as any); if (i === 2 && selectedCell?.patient_id) loadCharges(selectedCell.patient_id, chargeMonth); if (i === 4 && selectedCell?.patient_id) api(`/patients/${selectedCell.patient_id}/events`).then(setPatientEvents).catch(() => {}); }} className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px flex items-center gap-1 ${cellEditTab === i ? tab.active : 'border-transparent text-slate-400 hover:text-slate-600'}`}><span className="text-sm">{tab.icon}</span>{tab.label}</button>
+                <button key={i} onClick={() => { setCellEditTab(i as any); if (i === 2 && selectedCell?.patient_id && chargeLoadedFor !== selectedCell.patient_id) loadCharges(selectedCell.patient_id, chargeMonth); if (i === 4 && selectedCell?.patient_id) api(`/patients/${selectedCell.patient_id}/events`).then(setPatientEvents).catch(() => {}); }} className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px flex items-center gap-1 ${cellEditTab === i ? tab.active : 'border-transparent text-slate-400 hover:text-slate-600'}`}><span className="text-sm">{tab.icon}</span>{tab.label}</button>
               ))}
             </div>
             {/* 탭 내용 */}
@@ -1593,14 +1666,15 @@ export default function PatientManagePage() {
                   <div>
                     <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />보험 · 분류</p>
                     <div className="grid grid-cols-4 gap-3">
-                      <div><label className="text-[10px] text-slate-500 font-semibold">보험유형</label><GroupedSelectField value={selectedCell.insurance_type} onChange={v => setSelectedCell({ ...selectedCell, insurance_type: v, ...(v !== 'HEALTH_REDUCED_SEVERE' && v !== 'HEALTH_REDUCED_RARE' ? { disease_code_id: null, disease_code_registered_at: null, disease_code_expires_at: null } : {}) })} groups={INSURANCE_GROUPS} /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">보험유형</label><GroupedSelectField value={selectedCell.insurance_type} onChange={v => setSelectedCell({ ...selectedCell, insurance_type: v })} groups={INSURANCE_GROUPS} /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">본인부담경감</label><SelectField value={selectedCell.copay_reduction || 'NONE'} onChange={v => setSelectedCell({ ...selectedCell, copay_reduction: v, ...(v === 'NONE' ? { disease_code_id: null, disease_code_registered_at: null, disease_code_expires_at: null } : {}) })} options={COPAY_REDUCTION_OPTIONS} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">환자분류</label><SelectField value={selectedCell.patient_group} onChange={v => setSelectedCell({ ...selectedCell, patient_group: v })} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">주상병코드</label><SelectField value={selectedCell.main_disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, main_disease_code_id: v || null })} options={[{ v: '', l: '주상병코드 선택' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">주상병코드</label><SearchableSelect value={selectedCell.main_disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, main_disease_code_id: v || null })} placeholder="주상병코드 검색..." options={[{ v: '', l: '선택 안함' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">입원일</label><input type="date" className="input w-full" value={selectedCell.admitted_at || ''} onChange={e => setSelectedCell({ ...selectedCell, admitted_at: e.target.value })} /></div>
                     </div>
-                    {(selectedCell.insurance_type === 'HEALTH_REDUCED_SEVERE' || selectedCell.insurance_type === 'HEALTH_REDUCED_RARE') && (
+                    {(selectedCell.copay_reduction === 'SEVERE' || selectedCell.copay_reduction === 'RARE') && (
                       <div className="mt-2 border border-blue-200 rounded-lg p-3 bg-blue-50 grid grid-cols-3 gap-3">
-                        <div><p className="text-[10px] text-blue-600 font-semibold mb-1">V코드 (산정특례)</p><SelectField value={selectedCell.disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, disease_code_id: v || null })} options={[{ v: '', l: 'V코드 선택' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === (selectedCell.insurance_type === 'HEALTH_REDUCED_SEVERE' ? 'SEVERE' : 'RARE')).map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
+                        <div><p className="text-[10px] text-blue-600 font-semibold mb-1">V코드 (산정특례)</p><SelectField value={selectedCell.disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, disease_code_id: v || null })} options={[{ v: '', l: 'V코드 선택' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === (selectedCell.copay_reduction === 'SEVERE' ? 'SEVERE' : 'RARE')).map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
                         <div><p className="text-[10px] text-blue-600 font-semibold mb-1">등록일</p><input type="date" className="input w-full" value={selectedCell.disease_code_registered_at || ''} onChange={e => { const val = e.target.value; const next: any = { ...selectedCell, disease_code_registered_at: val || null }; if (val && !selectedCell.disease_code_expires_at) { const d = new Date(val + 'T00:00:00'); d.setFullYear(d.getFullYear() + 5); next.disease_code_expires_at = d.toISOString().slice(0, 10); } setSelectedCell(next); }} /></div>
                         <div><p className="text-[10px] text-blue-600 font-semibold mb-1">만료일</p><input type="date" className="input w-full" value={selectedCell.disease_code_expires_at || ''} onChange={e => setSelectedCell({ ...selectedCell, disease_code_expires_at: e.target.value || null })} /></div>
                       </div>
@@ -2147,13 +2221,15 @@ export default function PatientManagePage() {
               <input className="input" placeholder="차트번호" value={listAdmitForm.chart_no} onChange={e => setListAdmitForm(p => ({ ...p, chart_no: e.target.value }))} />
               <input className="input" placeholder="이름" value={listAdmitForm.name} onChange={e => setListAdmitForm(p => ({ ...p, name: e.target.value }))} />
               <SelectField value={listAdmitForm.mobility_type} onChange={v => setListAdmitForm(p => ({ ...p, mobility_type: v }))} options={[{ v: 'BEDRIDDEN', l: '와상' }, { v: 'AMBULATORY', l: '거동' }]} />
-              <GroupedSelectField value={listAdmitForm.insurance_type} onChange={v => setListAdmitForm(p => ({ ...p, insurance_type: v, ...(v !== 'HEALTH_REDUCED_SEVERE' && v !== 'HEALTH_REDUCED_RARE' ? { disease_code_id: '', disease_code_registered_at: '', disease_code_expires_at: '' } : {}) }))} groups={INSURANCE_GROUPS} />
+              <GroupedSelectField value={listAdmitForm.insurance_type} onChange={v => setListAdmitForm(p => ({ ...p, insurance_type: v }))} groups={INSURANCE_GROUPS} />
+              <SelectField value={listAdmitForm.copay_reduction || 'NONE'} onChange={v => setListAdmitForm(p => ({ ...p, copay_reduction: v, ...(v === 'NONE' ? { disease_code_id: '', disease_code_registered_at: '', disease_code_expires_at: '' } : {}) }))} options={COPAY_REDUCTION_OPTIONS} />
               <SelectField value={listAdmitForm.patient_group} onChange={v => setListAdmitForm(p => ({ ...p, patient_group: v }))} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} />
-              <SelectField
+              <SearchableSelect
                 value={listAdmitForm.main_disease_code_id}
                 onChange={v => setListAdmitForm(p => ({ ...p, main_disease_code_id: v }))}
+                placeholder="주상병코드 검색..."
                 options={[
-                  { v: '', l: '주상병코드 선택' },
+                  { v: '', l: '선택 안함' },
                   ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
                 ]}
               />
@@ -2163,7 +2239,7 @@ export default function PatientManagePage() {
               <input className="input md:col-span-3" placeholder="사업명칭" value={listAdmitForm.project_name} onChange={e => setListAdmitForm(p => ({ ...p, project_name: e.target.value }))} />
               <input className="input" placeholder="지역" value={listAdmitForm.project_region} onChange={e => setListAdmitForm(p => ({ ...p, project_region: e.target.value }))} />
               <input className="input" placeholder="시/군/구청" value={listAdmitForm.project_sigungu_office} onChange={e => setListAdmitForm(p => ({ ...p, project_sigungu_office: e.target.value }))} />
-              {(listAdmitForm.insurance_type === 'HEALTH_REDUCED_SEVERE' || listAdmitForm.insurance_type === 'HEALTH_REDUCED_RARE') && (
+              {(listAdmitForm.copay_reduction === 'SEVERE' || listAdmitForm.copay_reduction === 'RARE') && (
                 <div className="md:col-span-3 border border-blue-200 rounded-lg p-2 bg-blue-50 grid md:grid-cols-3 gap-2">
                   <div>
                     <p className="text-xs text-blue-600 mb-1 font-medium">V코드 (산정특례)</p>
@@ -2173,7 +2249,7 @@ export default function PatientManagePage() {
                       options={[
                         { v: '', l: 'V코드 선택' },
                         ...diseaseCodes
-                          .filter(c => c.is_active && c.code_type === (listAdmitForm.insurance_type === 'HEALTH_REDUCED_SEVERE' ? 'SEVERE' : 'RARE'))
+                          .filter(c => c.is_active && c.code_type === (listAdmitForm.copay_reduction === 'SEVERE' ? 'SEVERE' : 'RARE'))
                           .map(c => ({ v: c.id, l: `${c.code} ${c.name}` })),
                       ]}
                     />

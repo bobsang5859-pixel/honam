@@ -767,6 +767,9 @@ export interface DashboardSummary {
     open_to: string;
   }[];
   supply_pipeline?: SupplyPipeline | null;
+  alerts?: { id: string; severity: string; title: string; description: string; entity_type: string; entity_id?: string; link?: string; detected_at: string }[];
+  alert_summary?: { critical: number; warning: number; info: number };
+  alerts_last_checked_at?: string | null;
 }
 
 export interface SupplyPipeline {

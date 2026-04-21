@@ -78,6 +78,9 @@ model User {
   patients         Patient[]
   patient_events   PatientEvent[]
   dept_calendar_events DeptCalendarEvent[]
+  patient_payments     PatientPayment[] @relation("PatientPaymentCreator")
+  referrals_uploaded   Referral[] @relation("ReferralUploader")
+  referrals_approved   Referral[] @relation("ReferralApprover")
 
   @@index([department_id])
   @@index([is_active])
@@ -269,6 +272,7 @@ model Patient {
   gender                    String    @default("UNKNOWN") // F | M | UNKNOWN
   mobility_type             String    @default("AMBULATORY") // BEDRIDDEN | AMBULATORY
   insurance_type            String    @default("HEALTH") // HEALTH | MEDICAL_1 | MEDICAL_2 | WORKERS_COMP | AUTO_INS
+  copay_reduction           String    @default("NONE") // NONE | SEVERE(중증질환) | RARE(희귀난치성)
   patient_group             String    @default("UNRATED") // HIGHEST | HIGH | MEDIUM | LOW | SELECT | UNRATED
   specializations           String    @default("[]") // JSON string: INFECT | DIALYSIS | REHAB
   infection_strain          String    @default("") // CRE | VRE | MR | ''
@@ -313,6 +317,8 @@ model Patient {
   patient_disease_codes PatientDiseaseCode[]
   patient_treatments    PatientTreatment[]
   charges               PatientCharge[]
+  payments              PatientPayment[]
+  referrals             Referral[]
 
   @@index([department_id, status])
   @@index([department_id, room_no, bed_no])
@@ -392,6 +398,7 @@ model WardRoomBoard {
   gender                 String   @default("UNKNOWN")
   mobility_type          String   @default("AMBULATORY")
   insurance_type         String   @default("HEALTH")
+  copay_reduction        String   @default("NONE") // NONE | SEVERE | RARE
   specializations        String   @default("[]")
   infection_strain       String   @default("")
   period_type            String   @default("")
@@ -1204,6 +1211,65 @@ model PatientCharge {
   @@index([patient_id, charge_month])
   @@index([category, charge_month])
   @@map("patient_charges")
+}
+
+model PatientPayment {
+  id              String    @id @default(uuid())
+  patient_id      String
+  amount          Float
+  payment_date    DateTime
+  payment_method  String    // CASH | CARD | TRANSFER | OTHER
+  charge_month    String    // "2026-03"
+  note            String    @default("")
+  created_by      String
+  created_at      DateTime  @default(now())
+  deleted_at      DateTime?
+
+  patient Patient @relation(fields: [patient_id], references: [id])
+  creator User    @relation("PatientPaymentCreator", fields: [created_by], references: [id])
+
+  @@index([patient_id, charge_month])
+  @@index([charge_month])
+  @@map("patient_payments")
+}
+
+model Referral {
+  id                 String    @id @default(uuid())
+  status             String    @default("UPLOADED") // UPLOADED | ANALYZING | REVIEW | APPROVED | REJECTED
+  file_path          String
+  file_name          String
+  mime_type          String    @default("image/jpeg")
+  memo               String    @default("")
+  uploaded_by        String
+
+  patient_name       String    @default("")
+  diagnosis          String    @default("")
+  condition          String    @default("")
+  admission_possible Boolean   @default(false)
+  ai_summary         String    @default("")
+  suggested_ward     String    @default("")
+  suggested_room     String    @default("")
+  room_reason        String    @default("")
+
+  final_ward         String    @default("")
+  final_room         String    @default("")
+  approved_by        String?
+  approved_at        DateTime?
+  reject_reason      String    @default("")
+
+  patient_id         String?
+
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+  deleted_at         DateTime?
+
+  uploader User     @relation("ReferralUploader", fields: [uploaded_by], references: [id])
+  approver User?    @relation("ReferralApprover", fields: [approved_by], references: [id])
+  patient  Patient? @relation(fields: [patient_id], references: [id])
+
+  @@index([status])
+  @@index([created_at])
+  @@map("referrals")
 }
 
 model Complaint {

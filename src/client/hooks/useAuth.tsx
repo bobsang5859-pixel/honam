@@ -52,9 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const hasPerm = (perm: string) => user?.permissions.includes(perm) ?? false;
-  const hasAnyPerm = (...perms: string[]) =>
-    perms.some(p => user?.permissions.includes(p) ?? false);
+  const isAdmin = user?.permissions.includes('SYSTEM_ADMIN') ?? false;
+  const hasPerm = (perm: string) => isAdmin || (user?.permissions.includes(perm) ?? false);
+  const hasAnyPerm = (...perms: string[]) => isAdmin || perms.some(p => user?.permissions.includes(p) ?? false);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, hasPerm, hasAnyPerm }}>

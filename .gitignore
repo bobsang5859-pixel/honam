@@ -8,3 +8,11 @@ dist/
 .DS_Store
 Thumbs.db
 node_modules
+
+# Python (ai-server)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/

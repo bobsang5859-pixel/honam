@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../utils/api';
 import { useAuth } from '../hooks/useAuth';
-import { ChevronLeft, ChevronRight, Plus, X, TrendingUp, Users, Building2, Activity, AlertTriangle, Package, ClipboardList, Heart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, TrendingUp, Users, Building2, Activity, AlertTriangle, Package, ClipboardList, Heart, ShieldAlert, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { DashboardSummary, DeptCalendarEvent } from '@shared/types';
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
@@ -20,7 +21,7 @@ function getMonthDays(year: number, month: number): (Date | null)[] {
 const isSameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-const INS_LABEL: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여1종', MEDICAL_2: '의료급여2종', WORKERS_COMP: '산재', AUTO_INS: '자동차', HEALTH_REDUCED_SEVERE: '본인부담(중증)', HEALTH_REDUCED_RARE: '본인부담(희귀)' };
+const INS_LABEL: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여1종', MEDICAL_2: '의료급여2종', WORKERS_COMP: '산재', AUTO_INS: '자동차' };
 const GRP_LABEL: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가' };
 
 export default function DashboardPage() {
@@ -99,6 +100,9 @@ export default function DashboardPage() {
         <h1 className="text-xl font-bold text-slate-800">안녕하세요, {user?.display_name}님</h1>
         <p className="text-sm text-slate-400 mt-0.5">{today.getFullYear()}년 {today.getMonth() + 1}월 {today.getDate()}일 {DOW[today.getDay()]}요일</p>
       </div>
+
+      {/* ─── 시스템 점검 알림 ─── */}
+      {isFullView && (data?.alerts?.length ?? 0) > 0 && <AlertBanner alerts={data!.alerts!} summary={data!.alert_summary!} />}
 
       {/* ─── 상단 KPI ─── */}
       {isFullView ? (
@@ -381,6 +385,50 @@ function BarChart({ title, data, labels }: { title: string; data: any; labels: R
         })}
         {entries.length === 0 && <p className="text-xs text-slate-300 text-center py-4">데이터 없음</p>}
       </div>
+    </div>
+  );
+}
+
+/* ── 시스템 점검 알림 배너 ── */
+function AlertBanner({ alerts, summary }: { alerts: any[]; summary: { critical: number; warning: number; info: number } }) {
+  const [open, setOpen] = useState(true);
+  const navigate = useNavigate();
+  const total = alerts.length;
+  if (total === 0) return null;
+
+  const severityIcon = (s: string) => s === 'critical' ? '🔴' : s === 'warning' ? '🟡' : '🔵';
+  const severityBg = (s: string) => s === 'critical' ? 'bg-red-50 border-red-200' : s === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200';
+  const headerBg = summary.critical > 0 ? 'from-red-500 to-red-600' : summary.warning > 0 ? 'from-amber-500 to-amber-600' : 'from-blue-500 to-blue-600';
+
+  return (
+    <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+      <button onClick={() => setOpen(!open)}
+        className={`w-full bg-gradient-to-r ${headerBg} px-4 py-2.5 flex items-center justify-between text-white`}>
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4" />
+          <span className="text-sm font-bold">시스템 점검 알림</span>
+          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{total}건</span>
+          {summary.critical > 0 && <span className="text-xs bg-red-400/30 px-1.5 py-0.5 rounded-full">긴급 {summary.critical}</span>}
+          {summary.warning > 0 && <span className="text-xs bg-amber-400/30 px-1.5 py-0.5 rounded-full">경고 {summary.warning}</span>}
+        </div>
+        <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="bg-white divide-y divide-gray-50 max-h-64 overflow-y-auto">
+          {alerts.map((a: any, i: number) => (
+            <div key={a.id || i}
+              onClick={() => a.link && navigate(a.link)}
+              className={`px-4 py-2.5 flex items-start gap-3 ${a.link ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}>
+              <span className="text-sm flex-shrink-0 mt-0.5">{severityIcon(a.severity)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-700">{a.title}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{a.description}</p>
+              </div>
+              {a.link && <span className="text-xs text-slate-300 flex-shrink-0 mt-1">→</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

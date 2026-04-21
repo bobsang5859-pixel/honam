@@ -20,6 +20,8 @@ export const ALL_DEPT_COMMON_MENU_KEYS = [
   'cost',
   'patient-stats',
   'patient-manage',
+  'stats-dashboard',
+  'complaints',
 ] as const;
 
 export const HQ_GROUP_KEYS = [
@@ -88,7 +90,7 @@ const DEFAULT_WORK_GROUPS: WorkGroupPolicy[] = [
   {
     group_key: 'HQ_PATIENT',
     label: '환자 파트',
-    menu_keys: ['patient-manage'],
+    menu_keys: ['patient-manage', 'patient-charges', 'referral-intake'],
     permission_keys: ['PATIENT_MANAGE'],
   },
   {

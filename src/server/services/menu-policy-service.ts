@@ -12,7 +12,7 @@ export const ALL_DEPT_COMMON_MENU_KEYS = [
   'ward-requests',
   'equipment-requests',
   'inventory',
-  'usage',
+  'dept-inventory',
   'loans',
   'my-equipment',
   'receipt-check',
@@ -21,7 +21,12 @@ export const ALL_DEPT_COMMON_MENU_KEYS = [
   'patient-stats',
   'patient-manage',
   'stats-dashboard',
-  'complaints',
+  'purchase-decisions',
+  'order-routing',
+  // 사이드바엔 있으나 어느 작업그룹에도 미등록이라 비관리자에게 영구히 숨겨지던 메뉴.
+  // 공통 화이트리스트에 추가 — 실제 노출은 메뉴의 anyPerm 이 통제.
+  'request-schedules',
+  'cost-reconcile',
 ] as const;
 
 export const HQ_GROUP_KEYS = [
@@ -72,7 +77,7 @@ const DEFAULT_WORK_GROUPS: WorkGroupPolicy[] = [
   {
     group_key: 'HQ_PROCUREMENT',
     label: '발주/입고 파트',
-    menu_keys: ['purchase-orders', 'receipts'],
+    menu_keys: ['purchase-orders', 'receipts', 'cost-analysis'],
     permission_keys: ['PURCHASE_MANAGE'],
   },
   {
@@ -84,13 +89,13 @@ const DEFAULT_WORK_GROUPS: WorkGroupPolicy[] = [
   {
     group_key: 'HQ_ANALYTICS',
     label: '분석 파트',
-    menu_keys: ['cost', 'patient-stats', 'audit-logs'],
+    menu_keys: ['cost', 'cost-analysis', 'patient-stats', 'audit-logs'],
     permission_keys: ['STATS_VIEW', 'PURCHASE_MANAGE', 'BASIC_MANAGE'],
   },
   {
     group_key: 'HQ_PATIENT',
     label: '환자 파트',
-    menu_keys: ['patient-manage', 'patient-charges', 'referral-intake'],
+    menu_keys: ['patient-manage'],
     permission_keys: ['PATIENT_MANAGE'],
   },
   {
@@ -102,7 +107,7 @@ const DEFAULT_WORK_GROUPS: WorkGroupPolicy[] = [
   {
     group_key: 'HQ_SYSTEM',
     label: '시스템 파트',
-    menu_keys: ['users', 'system'],
+    menu_keys: ['users', 'system', 'doc-templates'],
     permission_keys: ['BASIC_MANAGE', 'SYSTEM_ADMIN'],
   },
   {
@@ -435,6 +440,14 @@ export async function previewUserMenuPolicy(userId: string) {
   for (const ur of user.user_roles) {
     roles.push(ur.role.name);
     for (const rp of ur.role.role_permissions) permissions.add(rp.permission.key);
+  }
+
+  // direct_permissions (사용자별 직접 부여 권한) 병합 — buildAuthPayload(로그인 경로)와 일치시켜
+  // 미리보기/권한진단이 실제 로그인 권한과 동일하게 나오도록 한다.
+  // (이전: 역할 권한만 봐서 직접권한 사용자를 "권한 부족"으로 잘못 표시)
+  const directPermsRaw = (user as any).direct_permissions;
+  if (directPermsRaw) {
+    try { (JSON.parse(directPermsRaw) as string[]).forEach((p) => permissions.add(p)); } catch { /* malformed → skip */ }
   }
 
   const legacy_menu_permissions = (user as any).menu_permissions

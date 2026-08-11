@@ -1,0 +1,2324 @@
+[
+  {
+    "date": "2026-01-07",
+    "item_count": 48,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 14,
+        "unit_price": 1800.0,
+        "amount": 25200.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 14,
+        "unit_price": 4200.0,
+        "amount": 58800.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 30,
+        "unit_price": 6000.0,
+        "amount": 180000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 10,
+        "unit_price": 3960.0,
+        "amount": 39600.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 3,
+        "unit_price": 4250.0,
+        "amount": 12750.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 10,
+        "unit_price": 5540.0,
+        "amount": 55400.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 5,
+        "unit_price": 5850.0,
+        "amount": 29250.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 11,
+        "unit_price": 7700.0,
+        "amount": 84700.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 2,
+        "unit_price": 11000.0,
+        "amount": 22000.0
+      },
+      {
+        "raw_name": "밴드골드 10매*45갑 (73*18*10Pcs)",
+        "qty": 1,
+        "unit_price": 13230.0,
+        "amount": 13230.0
+      },
+      {
+        "raw_name": "수성탄력붕대 4\"(10cm*215cm)K7202123",
+        "qty": 1,
+        "unit_price": 6096.0,
+        "amount": 6096.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 3ml 1\"",
+        "qty": 3,
+        "unit_price": 4800.0,
+        "amount": 14400.0
+      },
+      {
+        "raw_name": "채혈 주사기 10cc(정림)",
+        "qty": 1,
+        "unit_price": 15000.0,
+        "amount": 15000.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 13,
+        "unit_price": 6875.0,
+        "amount": 89375.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 1,
+        "unit_price": 2200.0,
+        "amount": 2200.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 5,
+        "unit_price": 18750.0,
+        "amount": 93750.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 10,
+        "unit_price": 20750.0,
+        "amount": 207500.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 10,
+        "unit_price": 14850.0,
+        "amount": 148500.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 23,
+        "unit_price": 1290.0,
+        "amount": 29670.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 11,
+        "unit_price": 3790.0,
+        "amount": 41690.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 17,
+        "unit_price": 3790.0,
+        "amount": 64430.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 3,
+        "unit_price": 3790.0,
+        "amount": 11370.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 3,
+        "unit_price": 341.0,
+        "amount": 1023.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 2,
+        "unit_price": 3850.0,
+        "amount": 7700.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 24,
+        "unit_price": 3850.0,
+        "amount": 92400.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 30,
+        "unit_price": 495.0,
+        "amount": 14850.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 9,
+        "unit_price": 495.0,
+        "amount": 4455.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 8,
+        "unit_price": 1870.0,
+        "amount": 14960.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 4,
+        "unit_price": 550.0,
+        "amount": 2200.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 6,
+        "unit_price": 1950.0,
+        "amount": 11700.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  S 멸균",
+        "qty": 100,
+        "unit_price": 330.0,
+        "amount": 33000.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 18,
+        "unit_price": 1050.0,
+        "amount": 18900.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 20,
+        "unit_price": 4400.0,
+        "amount": 88000.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 15,
+        "unit_price": 15600.0,
+        "amount": 234000.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 5,
+        "unit_price": 15600.0,
+        "amount": 78000.0
+      },
+      {
+        "raw_name": "Tracheostomy Tube 7.0 (K4311004)ID7.0mm/OD10.0mm/30FR",
+        "qty": 1,
+        "unit_price": 14260.0,
+        "amount": 14260.0
+      },
+      {
+        "raw_name": "Tracheostomy Tube 7.5 (K4311004)ID7.5mm/OD10.7mm/32FR",
+        "qty": 2,
+        "unit_price": 14260.0,
+        "amount": 28520.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 14,
+        "unit_price": 1350.0,
+        "amount": 18900.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 4,
+        "unit_price": 4750.0,
+        "amount": 19000.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 100,
+        "unit_price": 180.0,
+        "amount": 18000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 7,
+        "unit_price": 2620.0,
+        "amount": 18340.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 25,
+        "unit_price": 1210.0,
+        "amount": 30250.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 3,
+        "unit_price": 2620.0,
+        "amount": 7860.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 6,
+        "unit_price": 1730.0,
+        "amount": 10380.0
+      },
+      {
+        "raw_name": "INDICATOR(AUTO CLAVE)24MM steam(1322-24MM)",
+        "qty": 2,
+        "unit_price": 11500.0,
+        "amount": 23000.0
+      },
+      {
+        "raw_name": "D/LARYNGOSCOPE K4432027 MHPD-201 #4",
+        "qty": 2,
+        "unit_price": 9680.0,
+        "amount": 19360.0
+      },
+      {
+        "raw_name": "염화벤잘코늄액 1L",
+        "qty": 1,
+        "unit_price": 4400.0,
+        "amount": 4400.0
+      }
+    ]
+  },
+  {
+    "date": "2026-01-21",
+    "item_count": 57,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 11,
+        "unit_price": 1800.0,
+        "amount": 19800.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 10,
+        "unit_price": 4200.0,
+        "amount": 42000.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 25,
+        "unit_price": 6000.0,
+        "amount": 150000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 10,
+        "unit_price": 3960.0,
+        "amount": 39600.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 6,
+        "unit_price": 4250.0,
+        "amount": 25500.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(2호)",
+        "qty": 1,
+        "unit_price": 4250.0,
+        "amount": 4250.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 6,
+        "unit_price": 5540.0,
+        "amount": 33240.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 5,
+        "unit_price": 5850.0,
+        "amount": 29250.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 11,
+        "unit_price": 7700.0,
+        "amount": 84700.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 3,
+        "unit_price": 11000.0,
+        "amount": 33000.0
+      },
+      {
+        "raw_name": "밴드골드 10매*45갑 (73*18*10Pcs)",
+        "qty": 1,
+        "unit_price": 13230.0,
+        "amount": 13230.0
+      },
+      {
+        "raw_name": "수성탄력붕대 4\"(10cm*215cm)K7202123",
+        "qty": 1,
+        "unit_price": 6096.0,
+        "amount": 6096.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 3ml 1\"",
+        "qty": 13,
+        "unit_price": 4800.0,
+        "amount": 62400.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 5ml 1\"",
+        "qty": 9,
+        "unit_price": 5600.0,
+        "amount": 50400.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 10ml 1\"",
+        "qty": 8,
+        "unit_price": 8200.0,
+        "amount": 65600.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 20ml 1\"",
+        "qty": 5,
+        "unit_price": 7000.0,
+        "amount": 35000.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 10,
+        "unit_price": 6875.0,
+        "amount": 68750.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 3,
+        "unit_price": 2600.0,
+        "amount": 7800.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 1,
+        "unit_price": 2200.0,
+        "amount": 2200.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 7,
+        "unit_price": 18750.0,
+        "amount": 131250.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 10,
+        "unit_price": 20750.0,
+        "amount": 207500.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 9,
+        "unit_price": 14850.0,
+        "amount": 133650.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 32,
+        "unit_price": 1290.0,
+        "amount": 41280.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 19,
+        "unit_price": 3790.0,
+        "amount": 72010.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 12,
+        "unit_price": 3790.0,
+        "amount": 45480.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 3,
+        "unit_price": 3790.0,
+        "amount": 11370.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 6,
+        "unit_price": 3790.0,
+        "amount": 22740.0
+      },
+      {
+        "raw_name": "NELATON CATH #6 (12Fr)",
+        "qty": 7,
+        "unit_price": 341.0,
+        "amount": 2387.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 10,
+        "unit_price": 341.0,
+        "amount": 3410.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 2,
+        "unit_price": 3850.0,
+        "amount": 7700.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 36,
+        "unit_price": 3850.0,
+        "amount": 138600.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 14Fr (세운)",
+        "qty": 9,
+        "unit_price": 495.0,
+        "amount": 4455.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 16,
+        "unit_price": 495.0,
+        "amount": 7920.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 5,
+        "unit_price": 495.0,
+        "amount": 2475.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 14,
+        "unit_price": 1870.0,
+        "amount": 26180.0
+      },
+      {
+        "raw_name": "고막체온계 TIP",
+        "qty": 1,
+        "unit_price": 2500.0,
+        "amount": 2500.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 11,
+        "unit_price": 550.0,
+        "amount": 6050.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 14,
+        "unit_price": 1950.0,
+        "amount": 27300.0
+      },
+      {
+        "raw_name": "외과젤리[Surg-Lide]",
+        "qty": 8,
+        "unit_price": 3300.0,
+        "amount": 26400.0
+      },
+      {
+        "raw_name": "Glove 병동용 멸균 L(가주)",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 15,
+        "unit_price": 1050.0,
+        "amount": 15750.0
+      },
+      {
+        "raw_name": "Skintact Fstc1[K0001024]",
+        "qty": 90,
+        "unit_price": 243.0,
+        "amount": 21870.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 11,
+        "unit_price": 4400.0,
+        "amount": 48400.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 2,
+        "unit_price": 15600.0,
+        "amount": 31200.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 14,
+        "unit_price": 1350.0,
+        "amount": 18900.0
+      },
+      {
+        "raw_name": "Air Way 빨강(HS-AW-600)/4 (100mm), red/(협성)",
+        "qty": 2,
+        "unit_price": 1350.0,
+        "amount": 2700.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 1,
+        "unit_price": 4750.0,
+        "amount": 4750.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 100,
+        "unit_price": 180.0,
+        "amount": 18000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 10,
+        "unit_price": 2620.0,
+        "amount": 26200.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 31,
+        "unit_price": 1210.0,
+        "amount": 37510.0
+      },
+      {
+        "raw_name": "면봉  6\"  100입",
+        "qty": 10,
+        "unit_price": 440.0,
+        "amount": 4400.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 6,
+        "unit_price": 2620.0,
+        "amount": 15720.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 5,
+        "unit_price": 1730.0,
+        "amount": 8650.0
+      },
+      {
+        "raw_name": "INDICATOR(AUTO CLAVE)24MM steam(1322-24MM)",
+        "qty": 2,
+        "unit_price": 11500.0,
+        "amount": 23000.0
+      },
+      {
+        "raw_name": "3way 세운",
+        "qty": 1,
+        "unit_price": 16000.0,
+        "amount": 16000.0
+      },
+      {
+        "raw_name": "SUR-FIT NATURA DURAHESIVE[L3107002]28mm[413182]",
+        "qty": 10,
+        "unit_price": 6110.0,
+        "amount": 61100.0
+      },
+      {
+        "raw_name": "NATURA CLIPLESS POUCH BAG[L3002302]45mm불투명[416417]",
+        "qty": 10,
+        "unit_price": 2010.0,
+        "amount": 20100.0
+      }
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "item_count": 54,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 12,
+        "unit_price": 1800.0,
+        "amount": 21600.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 14,
+        "unit_price": 4200.0,
+        "amount": 58800.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 23,
+        "unit_price": 6000.0,
+        "amount": 138000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 10,
+        "unit_price": 3960.0,
+        "amount": 39600.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 6,
+        "unit_price": 4250.0,
+        "amount": 25500.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(2호)",
+        "qty": 1,
+        "unit_price": 4250.0,
+        "amount": 4250.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 8,
+        "unit_price": 5540.0,
+        "amount": 44320.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 4,
+        "unit_price": 5850.0,
+        "amount": 23400.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 16,
+        "unit_price": 7700.0,
+        "amount": 123200.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 4,
+        "unit_price": 11000.0,
+        "amount": 44000.0
+      },
+      {
+        "raw_name": "밴드골드 10매*45갑 (73*18*10Pcs)",
+        "qty": 1,
+        "unit_price": 13230.0,
+        "amount": 13230.0
+      },
+      {
+        "raw_name": "수성탄력붕대 4\"(10cm*215cm)K7202123",
+        "qty": 1,
+        "unit_price": 6096.0,
+        "amount": 6096.0
+      },
+      {
+        "raw_name": "수성탄력붕대 6\"(15cm*215cm)K7201123",
+        "qty": 1,
+        "unit_price": 7944.0,
+        "amount": 7944.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 20ml 1\"",
+        "qty": 4,
+        "unit_price": 7000.0,
+        "amount": 28000.0
+      },
+      {
+        "raw_name": "채혈 주사기 10cc(정림)",
+        "qty": 2,
+        "unit_price": 15000.0,
+        "amount": 30000.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 4,
+        "unit_price": 2600.0,
+        "amount": 10400.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 3,
+        "unit_price": 2200.0,
+        "amount": 6600.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 8,
+        "unit_price": 18750.0,
+        "amount": 150000.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 9,
+        "unit_price": 20750.0,
+        "amount": 186750.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 12,
+        "unit_price": 14850.0,
+        "amount": 178200.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 35,
+        "unit_price": 1290.0,
+        "amount": 45150.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 12,
+        "unit_price": 3790.0,
+        "amount": 45480.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 22,
+        "unit_price": 3790.0,
+        "amount": 83380.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 2,
+        "unit_price": 3790.0,
+        "amount": 7580.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 8,
+        "unit_price": 341.0,
+        "amount": 2728.0
+      },
+      {
+        "raw_name": "RECTAL TUBE 28Fr",
+        "qty": 2,
+        "unit_price": 1480.0,
+        "amount": 2960.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 4,
+        "unit_price": 3850.0,
+        "amount": 15400.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 33,
+        "unit_price": 3850.0,
+        "amount": 127050.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 14Fr (세운)",
+        "qty": 7,
+        "unit_price": 495.0,
+        "amount": 3465.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 16,
+        "unit_price": 495.0,
+        "amount": 7920.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 19,
+        "unit_price": 495.0,
+        "amount": 9405.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 12,
+        "unit_price": 1870.0,
+        "amount": 22440.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 3,
+        "unit_price": 550.0,
+        "amount": 1650.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 9,
+        "unit_price": 1950.0,
+        "amount": 17550.0
+      },
+      {
+        "raw_name": "외과젤리[Surg-Lide]",
+        "qty": 6,
+        "unit_price": 3300.0,
+        "amount": 19800.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  M 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  S 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 14,
+        "unit_price": 1050.0,
+        "amount": 14700.0
+      },
+      {
+        "raw_name": "Skintact Fstc1[K0001024]",
+        "qty": 120,
+        "unit_price": 243.0,
+        "amount": 29160.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 38,
+        "unit_price": 4400.0,
+        "amount": 167200.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 18,
+        "unit_price": 15600.0,
+        "amount": 280800.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 2,
+        "unit_price": 15600.0,
+        "amount": 31200.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 18,
+        "unit_price": 1350.0,
+        "amount": 24300.0
+      },
+      {
+        "raw_name": "Air Way 빨강(HS-AW-600)/4 (100mm), red/(협성)",
+        "qty": 3,
+        "unit_price": 1350.0,
+        "amount": 4050.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 4,
+        "unit_price": 4750.0,
+        "amount": 19000.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 200,
+        "unit_price": 180.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 12,
+        "unit_price": 2620.0,
+        "amount": 31440.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 16,
+        "unit_price": 1210.0,
+        "amount": 19360.0
+      },
+      {
+        "raw_name": "면봉  6\"  100입",
+        "qty": 10,
+        "unit_price": 440.0,
+        "amount": 4400.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 4,
+        "unit_price": 2620.0,
+        "amount": 10480.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 4,
+        "unit_price": 1730.0,
+        "amount": 6920.0
+      },
+      {
+        "raw_name": "O2 line (산소연결관 2M MT002)[Oxygen Supply Tube]",
+        "qty": 5,
+        "unit_price": 1550.0,
+        "amount": 7750.0
+      },
+      {
+        "raw_name": "청진기 단면(110)",
+        "qty": 1,
+        "unit_price": 9500.0,
+        "amount": 9500.0
+      }
+    ]
+  },
+  {
+    "date": "2026-02-13",
+    "item_count": 55,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 20,
+        "unit_price": 1800.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 16,
+        "unit_price": 4200.0,
+        "amount": 67200.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 26,
+        "unit_price": 6000.0,
+        "amount": 156000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 8,
+        "unit_price": 3960.0,
+        "amount": 31680.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 7,
+        "unit_price": 4250.0,
+        "amount": 29750.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 9,
+        "unit_price": 5540.0,
+        "amount": 49860.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 6,
+        "unit_price": 5850.0,
+        "amount": 35100.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 15,
+        "unit_price": 7700.0,
+        "amount": 115500.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 4,
+        "unit_price": 11000.0,
+        "amount": 44000.0
+      },
+      {
+        "raw_name": "밴드골드 10매*45갑 (73*18*10Pcs)",
+        "qty": 1,
+        "unit_price": 13230.0,
+        "amount": 13230.0
+      },
+      {
+        "raw_name": "수성탄력붕대 4\"(10cm*215cm)K7202123",
+        "qty": 1,
+        "unit_price": 6096.0,
+        "amount": 6096.0
+      },
+      {
+        "raw_name": "수성탄력붕대 6\"(15cm*215cm)K7201123",
+        "qty": 3,
+        "unit_price": 7944.0,
+        "amount": 23832.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 3ml 1\"",
+        "qty": 12,
+        "unit_price": 4800.0,
+        "amount": 57600.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 5ml 1\"",
+        "qty": 9,
+        "unit_price": 5600.0,
+        "amount": 50400.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 10ml 1\"",
+        "qty": 8,
+        "unit_price": 8200.0,
+        "amount": 65600.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 20ml 1\"",
+        "qty": 4,
+        "unit_price": 7000.0,
+        "amount": 28000.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 10,
+        "unit_price": 6875.0,
+        "amount": 68750.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 4,
+        "unit_price": 2600.0,
+        "amount": 10400.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 3,
+        "unit_price": 2200.0,
+        "amount": 6600.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 11,
+        "unit_price": 18750.0,
+        "amount": 206250.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 12,
+        "unit_price": 20750.0,
+        "amount": 249000.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 12,
+        "unit_price": 14850.0,
+        "amount": 178200.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 45,
+        "unit_price": 1290.0,
+        "amount": 58050.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 19,
+        "unit_price": 3790.0,
+        "amount": 72010.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 18,
+        "unit_price": 3790.0,
+        "amount": 68220.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 4,
+        "unit_price": 3790.0,
+        "amount": 15160.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "NELATON CATH #6 (12Fr)",
+        "qty": 24,
+        "unit_price": 341.0,
+        "amount": 8184.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 10,
+        "unit_price": 341.0,
+        "amount": 3410.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 8,
+        "unit_price": 3850.0,
+        "amount": 30800.0
+      },
+      {
+        "raw_name": "RECTAL TUBE 28Fr",
+        "qty": 8,
+        "unit_price": 1480.0,
+        "amount": 11840.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 34,
+        "unit_price": 3850.0,
+        "amount": 130900.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 14Fr (세운)",
+        "qty": 12,
+        "unit_price": 495.0,
+        "amount": 5940.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 32,
+        "unit_price": 495.0,
+        "amount": 15840.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 5,
+        "unit_price": 495.0,
+        "amount": 2475.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 13,
+        "unit_price": 1870.0,
+        "amount": 24310.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 7,
+        "unit_price": 550.0,
+        "amount": 3850.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 15,
+        "unit_price": 1950.0,
+        "amount": 29250.0
+      },
+      {
+        "raw_name": "외과젤리[Surg-Lide]",
+        "qty": 6,
+        "unit_price": 3300.0,
+        "amount": 19800.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  S 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 22,
+        "unit_price": 1050.0,
+        "amount": 23100.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 14,
+        "unit_price": 4400.0,
+        "amount": 61600.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 3,
+        "unit_price": 15600.0,
+        "amount": 46800.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 1,
+        "unit_price": 15600.0,
+        "amount": 15600.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 10,
+        "unit_price": 1350.0,
+        "amount": 13500.0
+      },
+      {
+        "raw_name": "Air Way 빨강(HS-AW-600)/4 (100mm), red/(협성)",
+        "qty": 3,
+        "unit_price": 1350.0,
+        "amount": 4050.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 2,
+        "unit_price": 4750.0,
+        "amount": 9500.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 200,
+        "unit_price": 180.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 5,
+        "unit_price": 2620.0,
+        "amount": 13100.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 19,
+        "unit_price": 1210.0,
+        "amount": 22990.0
+      },
+      {
+        "raw_name": "면봉  6\"  100입",
+        "qty": 10,
+        "unit_price": 440.0,
+        "amount": 4400.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 7,
+        "unit_price": 2620.0,
+        "amount": 18340.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 6,
+        "unit_price": 1730.0,
+        "amount": 10380.0
+      },
+      {
+        "raw_name": "TWO-LUMEN CVC 7Fr(Double) J4112009/7fr 20cm",
+        "qty": 4,
+        "unit_price": 32520.0,
+        "amount": 130080.0
+      },
+      {
+        "raw_name": "M-VAC SS200L 2Way (K3002021)NV",
+        "qty": 2,
+        "unit_price": 17160.0,
+        "amount": 34320.0
+      }
+    ]
+  },
+  {
+    "date": "2026-02-26",
+    "item_count": 1,
+    "items": [
+      {
+        "raw_name": "BREATHING SET[K4502465]MKMD2000K-1A-M",
+        "qty": 10,
+        "unit_price": 101760.0,
+        "amount": 1017600.0
+      }
+    ]
+  },
+  {
+    "date": "2026-03-04",
+    "item_count": 47,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 17,
+        "unit_price": 1800.0,
+        "amount": 30600.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 15,
+        "unit_price": 4200.0,
+        "amount": 63000.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 30,
+        "unit_price": 6000.0,
+        "amount": 180000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 10,
+        "unit_price": 3960.0,
+        "amount": 39600.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 4,
+        "unit_price": 4250.0,
+        "amount": 17000.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(2호)",
+        "qty": 1,
+        "unit_price": 4250.0,
+        "amount": 4250.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 6,
+        "unit_price": 5540.0,
+        "amount": 33240.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 3,
+        "unit_price": 5850.0,
+        "amount": 17550.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 12,
+        "unit_price": 7700.0,
+        "amount": 92400.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 4,
+        "unit_price": 11000.0,
+        "amount": 44000.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 5ml 1\"",
+        "qty": 13,
+        "unit_price": 5600.0,
+        "amount": 72800.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 10ml 1\"",
+        "qty": 12,
+        "unit_price": 8200.0,
+        "amount": 98400.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 12,
+        "unit_price": 6875.0,
+        "amount": 82500.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 6,
+        "unit_price": 2600.0,
+        "amount": 15600.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 4,
+        "unit_price": 2200.0,
+        "amount": 8800.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 12,
+        "unit_price": 18750.0,
+        "amount": 225000.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 12,
+        "unit_price": 20750.0,
+        "amount": 249000.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 11,
+        "unit_price": 14850.0,
+        "amount": 163350.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 30,
+        "unit_price": 1290.0,
+        "amount": 38700.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 13,
+        "unit_price": 3790.0,
+        "amount": 49270.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 22,
+        "unit_price": 3790.0,
+        "amount": 83380.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "NELATON CATH #6 (12Fr)",
+        "qty": 36,
+        "unit_price": 341.0,
+        "amount": 12276.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 25,
+        "unit_price": 341.0,
+        "amount": 8525.0
+      },
+      {
+        "raw_name": "RECTAL TUBE 28Fr",
+        "qty": 7,
+        "unit_price": 1480.0,
+        "amount": 10360.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 37,
+        "unit_price": 3850.0,
+        "amount": 142450.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 24,
+        "unit_price": 495.0,
+        "amount": 11880.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 22,
+        "unit_price": 495.0,
+        "amount": 10890.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 10,
+        "unit_price": 1870.0,
+        "amount": 18700.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 3,
+        "unit_price": 550.0,
+        "amount": 1650.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 8,
+        "unit_price": 1950.0,
+        "amount": 15600.0
+      },
+      {
+        "raw_name": "Skintact Fstc1[K0001024]",
+        "qty": 60,
+        "unit_price": 243.0,
+        "amount": 14580.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 40,
+        "unit_price": 4400.0,
+        "amount": 176000.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 7,
+        "unit_price": 15600.0,
+        "amount": 109200.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 3,
+        "unit_price": 15600.0,
+        "amount": 46800.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 6,
+        "unit_price": 1350.0,
+        "amount": 8100.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 3,
+        "unit_price": 4750.0,
+        "amount": 14250.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 200,
+        "unit_price": 180.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 12,
+        "unit_price": 2620.0,
+        "amount": 31440.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 20,
+        "unit_price": 1210.0,
+        "amount": 24200.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 6,
+        "unit_price": 2620.0,
+        "amount": 15720.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 7,
+        "unit_price": 1730.0,
+        "amount": 12110.0
+      },
+      {
+        "raw_name": "INDICATOR(AUTO CLAVE)24MM steam(1322-24MM)",
+        "qty": 2,
+        "unit_price": 11500.0,
+        "amount": 23000.0
+      },
+      {
+        "raw_name": "3way 세운",
+        "qty": 1,
+        "unit_price": 16000.0,
+        "amount": 16000.0
+      },
+      {
+        "raw_name": "O2 line (산소연결관 2M MT002)[Oxygen Supply Tube]",
+        "qty": 5,
+        "unit_price": 1550.0,
+        "amount": 7750.0
+      },
+      {
+        "raw_name": "SUR-FIT NATURA DURAHESIVE[L3107002]28mm[413182]",
+        "qty": 10,
+        "unit_price": 6110.0,
+        "amount": 61100.0
+      },
+      {
+        "raw_name": "NATURA CLIPLESS POUCH BAG[L3002302]45mm불투명[416417]",
+        "qty": 10,
+        "unit_price": 2010.0,
+        "amount": 20100.0
+      }
+    ]
+  },
+  {
+    "date": "2026-03-18",
+    "item_count": 59,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 14,
+        "unit_price": 1800.0,
+        "amount": 25200.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 17,
+        "unit_price": 4200.0,
+        "amount": 71400.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 32,
+        "unit_price": 6000.0,
+        "amount": 192000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 12,
+        "unit_price": 3960.0,
+        "amount": 47520.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 4,
+        "unit_price": 4250.0,
+        "amount": 17000.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(2호)",
+        "qty": 1,
+        "unit_price": 4250.0,
+        "amount": 4250.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 7,
+        "unit_price": 5540.0,
+        "amount": 38780.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 9,
+        "unit_price": 5850.0,
+        "amount": 52650.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 15,
+        "unit_price": 7700.0,
+        "amount": 115500.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 7,
+        "unit_price": 11000.0,
+        "amount": 77000.0
+      },
+      {
+        "raw_name": "D/SYRINGE 26G 1ml 1/2\"",
+        "qty": 1,
+        "unit_price": 5200.0,
+        "amount": 5200.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 3ml 1\"",
+        "qty": 13,
+        "unit_price": 4800.0,
+        "amount": 62400.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 5ml 1\"",
+        "qty": 11,
+        "unit_price": 5600.0,
+        "amount": 61600.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 10ml 1\"",
+        "qty": 13,
+        "unit_price": 8200.0,
+        "amount": 106600.0
+      },
+      {
+        "raw_name": "D/SYRINGE 23G 20ml 1\"",
+        "qty": 6,
+        "unit_price": 7000.0,
+        "amount": 42000.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 10,
+        "unit_price": 6875.0,
+        "amount": 68750.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 5,
+        "unit_price": 2600.0,
+        "amount": 13000.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 4,
+        "unit_price": 2200.0,
+        "amount": 8800.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 18,
+        "unit_price": 18750.0,
+        "amount": 337500.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 15,
+        "unit_price": 20750.0,
+        "amount": 311250.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 15,
+        "unit_price": 14850.0,
+        "amount": 222750.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 41,
+        "unit_price": 1290.0,
+        "amount": 52890.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 11,
+        "unit_price": 3790.0,
+        "amount": 41690.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 11,
+        "unit_price": 3790.0,
+        "amount": 41690.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 2,
+        "unit_price": 3790.0,
+        "amount": 7580.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "NELATON CATH #6 (12Fr)",
+        "qty": 22,
+        "unit_price": 341.0,
+        "amount": 7502.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 21,
+        "unit_price": 341.0,
+        "amount": 7161.0
+      },
+      {
+        "raw_name": "RECTAL TUBE 28Fr",
+        "qty": 2,
+        "unit_price": 1480.0,
+        "amount": 2960.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 4,
+        "unit_price": 3850.0,
+        "amount": 15400.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 50,
+        "unit_price": 3850.0,
+        "amount": 192500.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 31,
+        "unit_price": 495.0,
+        "amount": 15345.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 8,
+        "unit_price": 495.0,
+        "amount": 3960.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 12,
+        "unit_price": 1870.0,
+        "amount": 22440.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 8,
+        "unit_price": 550.0,
+        "amount": 4400.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 20,
+        "unit_price": 1950.0,
+        "amount": 39000.0
+      },
+      {
+        "raw_name": "외과젤리[Surg-Lide]",
+        "qty": 7,
+        "unit_price": 3300.0,
+        "amount": 23100.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  S 멸균",
+        "qty": 100,
+        "unit_price": 330.0,
+        "amount": 33000.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  M 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 14,
+        "unit_price": 1050.0,
+        "amount": 14700.0
+      },
+      {
+        "raw_name": "Skintact FS-TC1[K0001024]",
+        "qty": 60,
+        "unit_price": 243.0,
+        "amount": 14580.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 10,
+        "unit_price": 4400.0,
+        "amount": 44000.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 4,
+        "unit_price": 15600.0,
+        "amount": 62400.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 1,
+        "unit_price": 15600.0,
+        "amount": 15600.0
+      },
+      {
+        "raw_name": "Tracheostomy Tube 6.5 (K4311004)ID6.5mm/OD9.3mm/28FR",
+        "qty": 1,
+        "unit_price": 14260.0,
+        "amount": 14260.0
+      },
+      {
+        "raw_name": "Tracheostomy Tube 7.5 (K4311004)ID7.5mm/OD10.7mm/32FR",
+        "qty": 2,
+        "unit_price": 14260.0,
+        "amount": 28520.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 16,
+        "unit_price": 1350.0,
+        "amount": 21600.0
+      },
+      {
+        "raw_name": "Air Way 빨강(HS-AW-600)/4 (100mm), red/(협성)",
+        "qty": 5,
+        "unit_price": 1350.0,
+        "amount": 6750.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 3,
+        "unit_price": 4750.0,
+        "amount": 14250.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 200,
+        "unit_price": 180.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 18,
+        "unit_price": 2620.0,
+        "amount": 47160.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 25,
+        "unit_price": 1210.0,
+        "amount": 30250.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 3,
+        "unit_price": 2620.0,
+        "amount": 7860.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 1,
+        "unit_price": 1730.0,
+        "amount": 1730.0
+      },
+      {
+        "raw_name": "INDICATOR(AUTO CLAVE)24MM steam(1322-24MM)",
+        "qty": 2,
+        "unit_price": 11500.0,
+        "amount": 23000.0
+      },
+      {
+        "raw_name": "3way 세운",
+        "qty": 1,
+        "unit_price": 16000.0,
+        "amount": 16000.0
+      },
+      {
+        "raw_name": "염화벤잘코늄액 1L",
+        "qty": 1,
+        "unit_price": 4400.0,
+        "amount": 4400.0
+      },
+      {
+        "raw_name": "SUR-FIT NATURA DURAHESIVE[L3107002]28mm[413182]",
+        "qty": 10,
+        "unit_price": 6110.0,
+        "amount": 61100.0
+      },
+      {
+        "raw_name": "NATURA CLIPLESS POUCH BAG[L3002302]45mm불투명[416417]",
+        "qty": 10,
+        "unit_price": 2010.0,
+        "amount": 20100.0
+      }
+    ]
+  },
+  {
+    "date": "2026-03-25",
+    "item_count": 2,
+    "items": [
+      {
+        "raw_name": "전자혈압계 오므론 HEM7141T1",
+        "qty": 4,
+        "unit_price": 66000.0,
+        "amount": 264000.0
+      },
+      {
+        "raw_name": "청진기 단면(110)",
+        "qty": 2,
+        "unit_price": 9500.0,
+        "amount": 19000.0
+      }
+    ]
+  },
+  {
+    "date": "2026-04-01",
+    "item_count": 55,
+    "items": [
+      {
+        "raw_name": "GAUZE 2*2*8p*200s(K6061025)",
+        "qty": 14,
+        "unit_price": 1800.0,
+        "amount": 25200.0
+      },
+      {
+        "raw_name": "GAUZE 3*3*8p*200s (K6061027)",
+        "qty": 20,
+        "unit_price": 4200.0,
+        "amount": 84000.0
+      },
+      {
+        "raw_name": "GAUZE 4*3*8p 200s (K6061029)",
+        "qty": 32,
+        "unit_price": 6000.0,
+        "amount": 192000.0
+      },
+      {
+        "raw_name": "탈지면 절단 4*4(450g)/탈지면-엔",
+        "qty": 11,
+        "unit_price": 3960.0,
+        "amount": 43560.0
+      },
+      {
+        "raw_name": "COTTON BALL 450g(1호)",
+        "qty": 4,
+        "unit_price": 4250.0,
+        "amount": 17000.0
+      },
+      {
+        "raw_name": "복부용패드 18cm*20cm",
+        "qty": 5,
+        "unit_price": 5540.0,
+        "amount": 27700.0
+      },
+      {
+        "raw_name": "픽스롤  10cm*10m (BM5120CU)픽스롤반창고브이",
+        "qty": 6,
+        "unit_price": 5850.0,
+        "amount": 35100.0
+      },
+      {
+        "raw_name": "Bio Pore 1\"5900-1(W)",
+        "qty": 11,
+        "unit_price": 7700.0,
+        "amount": 84700.0
+      },
+      {
+        "raw_name": "MICROPORE (W) 1\"(1530-1)",
+        "qty": 4,
+        "unit_price": 11000.0,
+        "amount": 44000.0
+      },
+      {
+        "raw_name": "밴드골드 12매*45갑 (73*18*10Pcs)",
+        "qty": 2,
+        "unit_price": 13230.0,
+        "amount": 26460.0
+      },
+      {
+        "raw_name": "ENEMA SYRINGE 60ml",
+        "qty": 12,
+        "unit_price": 6875.0,
+        "amount": 82500.0
+      },
+      {
+        "raw_name": "D/NEEDLE 18G 1 1/2\"(38mm)",
+        "qty": 4,
+        "unit_price": 2600.0,
+        "amount": 10400.0
+      },
+      {
+        "raw_name": "D/NEEDLE 23G 1\"(25mm)",
+        "qty": 4,
+        "unit_price": 2200.0,
+        "amount": 8800.0
+      },
+      {
+        "raw_name": "수액 SET MLS-11(W/O)",
+        "qty": 12,
+        "unit_price": 18750.0,
+        "amount": 225000.0
+      },
+      {
+        "raw_name": "수액 SET MLS-24(Y-Type)",
+        "qty": 11,
+        "unit_price": 20750.0,
+        "amount": 228250.0
+      },
+      {
+        "raw_name": "I.V CATH 24G 3/4\"(한백)",
+        "qty": 12,
+        "unit_price": 14850.0,
+        "amount": 178200.0
+      },
+      {
+        "raw_name": "URINE BAG (K3100345)Sample Port",
+        "qty": 53,
+        "unit_price": 1290.0,
+        "amount": 68370.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 14Fr K5001045 (가주)",
+        "qty": 2,
+        "unit_price": 3790.0,
+        "amount": 7580.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 16Fr K5001045 (가주)",
+        "qty": 30,
+        "unit_price": 3790.0,
+        "amount": 113700.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 18Fr K5001045 (가주)",
+        "qty": 25,
+        "unit_price": 3790.0,
+        "amount": 94750.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 20Fr K5001045 (가주)",
+        "qty": 3,
+        "unit_price": 3790.0,
+        "amount": 11370.0
+      },
+      {
+        "raw_name": "S/FOLEY CATH 22Fr K5001045 (가주)",
+        "qty": 1,
+        "unit_price": 3790.0,
+        "amount": 3790.0
+      },
+      {
+        "raw_name": "NELATON CATH #6 (12Fr)",
+        "qty": 24,
+        "unit_price": 341.0,
+        "amount": 8184.0
+      },
+      {
+        "raw_name": "NELATON CATH #7 (14Fr)",
+        "qty": 24,
+        "unit_price": 341.0,
+        "amount": 8184.0
+      },
+      {
+        "raw_name": "RECTAL TUBE 28Fr",
+        "qty": 2,
+        "unit_price": 1480.0,
+        "amount": 2960.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 16Fr (원에스피)",
+        "qty": 3,
+        "unit_price": 3850.0,
+        "amount": 11550.0
+      },
+      {
+        "raw_name": "S/LEVIN TUBE 18Fr (원에스피)",
+        "qty": 40,
+        "unit_price": 3850.0,
+        "amount": 154000.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 14Fr (세운)",
+        "qty": 38,
+        "unit_price": 495.0,
+        "amount": 18810.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 16Fr (세운)",
+        "qty": 38,
+        "unit_price": 495.0,
+        "amount": 18810.0
+      },
+      {
+        "raw_name": "FRENCH CATH (1홀) 밸브유 18Fr (가주)",
+        "qty": 7,
+        "unit_price": 495.0,
+        "amount": 3465.0
+      },
+      {
+        "raw_name": "PVC 연결컨넥터 튜브 2M  (CPT-20)밸브유",
+        "qty": 9,
+        "unit_price": 1870.0,
+        "amount": 16830.0
+      },
+      {
+        "raw_name": "아세톤 100ml",
+        "qty": 4,
+        "unit_price": 550.0,
+        "amount": 2200.0
+      },
+      {
+        "raw_name": "산소마스크  (성인용)[O2 Mask]",
+        "qty": 12,
+        "unit_price": 1950.0,
+        "amount": 23400.0
+      },
+      {
+        "raw_name": "외과젤리[Surg-Lide]",
+        "qty": 10,
+        "unit_price": 3300.0,
+        "amount": 33000.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  S 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "Glove (프로글러브플러스)병동용  M 멸균",
+        "qty": 50,
+        "unit_price": 330.0,
+        "amount": 16500.0
+      },
+      {
+        "raw_name": "목설압자 6\" 100입",
+        "qty": 14,
+        "unit_price": 1050.0,
+        "amount": 14700.0
+      },
+      {
+        "raw_name": "Skintact FS-TC1[K0001024]",
+        "qty": 60,
+        "unit_price": 243.0,
+        "amount": 14580.0
+      },
+      {
+        "raw_name": "동서 미니뜸 약",
+        "qty": 50,
+        "unit_price": 4400.0,
+        "amount": 220000.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.20*30",
+        "qty": 7,
+        "unit_price": 15600.0,
+        "amount": 109200.0
+      },
+      {
+        "raw_name": "동방침 (전침) 0.25*30",
+        "qty": 3,
+        "unit_price": 15600.0,
+        "amount": 46800.0
+      },
+      {
+        "raw_name": "Tracheostomy Tube 7.0 (K4311004)ID7.0mm/OD10.0mm/30FR",
+        "qty": 2,
+        "unit_price": 14260.0,
+        "amount": 28520.0
+      },
+      {
+        "raw_name": "Air Way 노랑(HS-AW-500)/3 (90mm), orange/(협성)",
+        "qty": 18,
+        "unit_price": 1350.0,
+        "amount": 24300.0
+      },
+      {
+        "raw_name": "Air Way 흰색(HS-AW-300)/1 (70mm), white/(협성)",
+        "qty": 1,
+        "unit_price": 1350.0,
+        "amount": 1350.0
+      },
+      {
+        "raw_name": "Nasal Air-way  26FR (6.5mm)/NASOPHARYNGEAL LATEX FREE PVC",
+        "qty": 1,
+        "unit_price": 15400.0,
+        "amount": 15400.0
+      },
+      {
+        "raw_name": "T-Piece (자바라포함)[3096]Trachea Tee with Oxyegn adaptor",
+        "qty": 2,
+        "unit_price": 4750.0,
+        "amount": 9500.0
+      },
+      {
+        "raw_name": "헤파린 캡(협성)",
+        "qty": 200,
+        "unit_price": 180.0,
+        "amount": 36000.0
+      },
+      {
+        "raw_name": "FLOW REGULATOR MLS-32 M1002090",
+        "qty": 16,
+        "unit_price": 2620.0,
+        "amount": 41920.0
+      },
+      {
+        "raw_name": "NASAL CANNULA 성인/SA101",
+        "qty": 25,
+        "unit_price": 1210.0,
+        "amount": 30250.0
+      },
+      {
+        "raw_name": "Nebulizer Kit #8900(K4200009)",
+        "qty": 9,
+        "unit_price": 2620.0,
+        "amount": 23580.0
+      },
+      {
+        "raw_name": "NEBULIZER MASK 성인(K4201009)#30150",
+        "qty": 9,
+        "unit_price": 1730.0,
+        "amount": 15570.0
+      },
+      {
+        "raw_name": "INDICATOR(AUTO CLAVE)24MM steam(1322-24MM)",
+        "qty": 2,
+        "unit_price": 11500.0,
+        "amount": 23000.0
+      },
+      {
+        "raw_name": "3way 세운",
+        "qty": 1,
+        "unit_price": 16000.0,
+        "amount": 16000.0
+      },
+      {
+        "raw_name": "가루쑥 1Kg(쑥봉지)",
+        "qty": 3,
+        "unit_price": 7600.0,
+        "amount": 22800.0
+      },
+      {
+        "raw_name": "스킨코튼플러스 (400매)[휴 알콜솜 플러스]",
+        "qty": 1,
+        "unit_price": 2750.0,
+        "amount": 2750.0
+      }
+    ]
+  }
+]

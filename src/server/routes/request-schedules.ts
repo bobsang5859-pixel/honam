@@ -7,7 +7,28 @@ import { audit } from '../utils/audit';
 const router = Router();
 router.use(authMiddleware);
 
-const SCHEDULED_TYPES = ['CONSUMABLE_MEDICAL', 'CONSUMABLE_REGULAR', 'DIAPER', 'NIGHT_SNACK'] as const;
+const SCHEDULED_TYPES = ['CONSUMABLE_MEDICAL', 'CONSUMABLE_REGULAR', 'CONSUMABLE_OFFICE', 'DIAPER', 'NIGHT_SNACK'] as const;
+
+// 사용기간(use_from/use_to)은 stale Prisma client 가 모를 수 있어 raw SQL 로 read/write.
+// 저장은 Prisma SQLite DateTime 표현(epoch ms 정수)과 동일하게 맞춰 추후 client 재생성과 호환.
+async function writeUsePeriod(id: string, use_from: any, use_to: any) {
+  const uf = use_from ? new Date(use_from).getTime() : null;
+  const ut = use_to ? new Date(use_to).getTime() : null;
+  await (prisma as any).$executeRawUnsafe(
+    `UPDATE request_schedules SET use_from = ?, use_to = ? WHERE id = ?`, uf, ut, id);
+}
+async function readUsePeriodMap(): Promise<Map<string, { use_from: string | null; use_to: string | null }>> {
+  const rows: any[] = await (prisma as any).$queryRawUnsafe(
+    `SELECT id, use_from, use_to FROM request_schedules`);
+  const m = new Map<string, { use_from: string | null; use_to: string | null }>();
+  for (const r of rows) {
+    m.set(r.id, {
+      use_from: r.use_from != null ? new Date(Number(r.use_from)).toISOString() : null,
+      use_to:   r.use_to   != null ? new Date(Number(r.use_to)).toISOString()   : null,
+    });
+  }
+  return m;
+}
 
 function formatSchedule(s: any) {
   const now = new Date();
@@ -18,6 +39,8 @@ function formatSchedule(s: any) {
     request_type: s.request_type,
     open_from: s.open_from,
     open_to: s.open_to,
+    use_from: s.use_from ?? null,
+    use_to: s.use_to ?? null,
     period_label: s.period_label,
     note: s.note,
     created_by: s.created_by,
@@ -44,13 +67,14 @@ router.get('/', async (req: AuthRequest, res) => {
       where,
       orderBy: [{ open_from: 'asc' }],
     });
-    res.json(schedules.map(formatSchedule));
+    const useMap = await readUsePeriodMap();
+    res.json(schedules.map((s: any) => formatSchedule({ ...s, ...(useMap.get(s.id) ?? {}) })));
   } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });
 
-// POST /api/request-schedules — 인증된 사용자
-router.post('/', async (req: AuthRequest, res) => {
-  const { request_type, open_from, open_to, period_label, note } = req.body;
+// POST /api/request-schedules — 마스터 관리자(BASIC_MANAGE) 또는 총무구매(PURCHASE_MANAGE)
+router.post('/', requirePermission('BASIC_MANAGE', 'PURCHASE_MANAGE'), async (req: AuthRequest, res) => {
+  const { request_type, open_from, open_to, use_from, use_to, period_label, note } = req.body;
   if (!SCHEDULED_TYPES.includes(request_type)) {
     return res.status(400).json({ error: `유효한 신청 유형이 아닙니다. (${SCHEDULED_TYPES.join('|')})` });
   }
@@ -71,20 +95,25 @@ router.post('/', async (req: AuthRequest, res) => {
         created_by: req.user!.id,
       },
     });
+    await writeUsePeriod(created.id, use_from, use_to);
     await audit({
       actor_user_id: req.user!.id,
       action: 'CREATE',
       entity_type: 'request_schedules',
       entity_id: created.id,
-      after: { request_type, open_from, open_to, period_label },
+      after: { request_type, open_from, open_to, use_from, use_to, period_label },
     });
-    res.status(201).json(formatSchedule(created));
+    res.status(201).json(formatSchedule({
+      ...created,
+      use_from: use_from ? new Date(use_from).toISOString() : null,
+      use_to: use_to ? new Date(use_to).toISOString() : null,
+    }));
   } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });
 
-// PUT /api/request-schedules/:id — 인증된 사용자
-router.put('/:id', async (req: AuthRequest, res) => {
-  const { request_type, open_from, open_to, period_label, note } = req.body;
+// PUT /api/request-schedules/:id — 마스터 관리자(BASIC_MANAGE) 또는 총무구매(PURCHASE_MANAGE)
+router.put('/:id', requirePermission('BASIC_MANAGE', 'PURCHASE_MANAGE'), async (req: AuthRequest, res) => {
+  const { request_type, open_from, open_to, use_from, use_to, period_label, note } = req.body;
   if (request_type && !SCHEDULED_TYPES.includes(request_type)) {
     return res.status(400).json({ error: `유효한 신청 유형이 아닙니다.` });
   }
@@ -106,6 +135,9 @@ router.put('/:id', async (req: AuthRequest, res) => {
         ...(note !== undefined && { note }),
       },
     });
+    if (use_from !== undefined || use_to !== undefined) {
+      await writeUsePeriod(req.params.id, use_from, use_to);
+    }
     await audit({
       actor_user_id: req.user!.id,
       action: 'UPDATE',
@@ -114,12 +146,13 @@ router.put('/:id', async (req: AuthRequest, res) => {
       before: existing,
       after: updated,
     });
-    res.json(formatSchedule(updated));
+    const useMap = await readUsePeriodMap();
+    res.json(formatSchedule({ ...updated, ...(useMap.get(req.params.id) ?? {}) }));
   } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });
 
-// DELETE /api/request-schedules/:id — 인증된 사용자
-router.delete('/:id', async (req: AuthRequest, res) => {
+// DELETE /api/request-schedules/:id — 마스터 관리자(BASIC_MANAGE) 또는 총무구매(PURCHASE_MANAGE)
+router.delete('/:id', requirePermission('BASIC_MANAGE', 'PURCHASE_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const existing = await (prisma as any).requestSchedule.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: '스케줄을 찾을 수 없습니다.' });

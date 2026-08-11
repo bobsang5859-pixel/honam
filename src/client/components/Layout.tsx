@@ -10,7 +10,8 @@ import {
   Ruler, CalendarClock, HeartPulse, Flame, CheckCircle2, FileText,
   PackageCheck, PackageOpen, Boxes, ClipboardList, Monitor, PenLine,
   ArrowLeftRight, Wrench, ClipboardCheck, PieChart, User, Users,
-  ScrollText, Settings, LogOut, Menu, X, ChevronDown, MessageSquare, CreditCard, FileInput,
+  ScrollText, Settings, LogOut, Menu, X, ChevronDown,
+  Truck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -38,25 +39,22 @@ const MENU_SECTIONS: MenuSection[] = [
       { key: 'items',              path: '/items',              label: '품목',     icon: Package,       perm: 'BASIC_MANAGE' },
       { key: 'vendors',            path: '/vendors',            label: '업체',     icon: Building2,     perm: 'BASIC_MANAGE' },
       { key: 'item-categories',    path: '/item-categories',    label: '분류',     icon: FolderTree,    perm: 'BASIC_MANAGE' },
-      { key: 'stats-categories',   path: '/stats-categories',   label: '통계카테고리', icon: BarChart3,  perm: 'BASIC_MANAGE' },
       { key: 'expense-scopes',     path: '/expense-scopes',     label: '비용구분', icon: DollarSign,    perm: 'BASIC_MANAGE' },
       { key: 'baselines',          path: '/baselines',          label: '기준량',   icon: Ruler,         perm: 'BASIC_MANAGE' },
-      { key: 'request-schedules',  path: '/request-schedules',  label: '신청주기', icon: CalendarClock, perm: 'BASIC_MANAGE' },
+      { key: 'request-schedules',  path: '/request-schedules',  label: '신청주기', icon: CalendarClock, anyPerm: ['BASIC_MANAGE', 'PURCHASE_MANAGE'] },
       { key: 'treatment-types',    path: '/treatment-types',    label: '처치유형', icon: HeartPulse,    perm: 'BASIC_MANAGE' },
       { key: 'incineration',       path: '/incineration',       label: '소각료',   icon: Flame,         perm: 'BASIC_MANAGE' },
       { key: 'patient-manage',     path: '/patient-manage',     label: '환자관리', icon: User,          perm: 'PATIENT_MANAGE' },
-      { key: 'patient-charges',    path: '/patient-charges',    label: '수납관리', icon: CreditCard,    perm: 'PATIENT_MANAGE' },
-      { key: 'referral-intake',    path: '/referral-intake',    label: '의뢰서 접수', icon: FileInput,   perm: 'PATIENT_MANAGE' },
     ],
   },
   {
     key: 'purchase', label: '구매·재고',
     items: [
-      { key: 'approvals',       path: '/approvals',       label: '승인',   icon: CheckCircle2, perm: 'PURCHASE_MANAGE' },
-      { key: 'purchase-orders', path: '/purchase-orders', label: '발주',   icon: FileText,     perm: 'PURCHASE_MANAGE' },
+      { key: 'approvals',          path: '/approvals',          label: '승인',       icon: CheckCircle2, perm: 'PURCHASE_MANAGE' },
+      { key: 'purchase-orders',    path: '/purchase-orders',    label: '발주',       icon: Truck,        perm: 'PURCHASE_MANAGE' },
       { key: 'receipts',        path: '/receipts',        label: '입고',   icon: PackageCheck, perm: 'PURCHASE_MANAGE' },
       { key: 'stock-out',       path: '/stock-out',       label: '불출',   icon: PackageOpen,  perm: 'PURCHASE_MANAGE' },
-      { key: 'inventory',       path: '/inventory',       label: '재고',   icon: Boxes,        perm: 'PURCHASE_MANAGE' },
+      { key: 'inventory',       path: '/inventory',       label: '창고재고현황', icon: Boxes,        perm: 'PURCHASE_MANAGE' },
     ],
   },
   {
@@ -64,7 +62,7 @@ const MENU_SECTIONS: MenuSection[] = [
     items: [
       { key: 'ward-requests',      path: '/ward-requests',      label: '소모품신청', icon: ClipboardList,  anyPerm: ['REQUEST_USE', 'PURCHASE_MANAGE'] },
       { key: 'equipment-requests', path: '/equipment-requests', label: '비품신청',   icon: Monitor,        anyPerm: ['REQUEST_USE', 'PURCHASE_MANAGE'] },
-      { key: 'usage',              path: '/usage',              label: '사용등록',   icon: PenLine,        perm: 'REQUEST_USE' },
+      { key: 'dept-inventory',     path: '/dept-inventory',     label: '재고관리',   icon: Boxes,          perm: 'REQUEST_USE' },
       { key: 'loans',              path: '/loans',              label: '대여',       icon: ArrowLeftRight, perm: 'REQUEST_USE' },
       { key: 'my-equipment',       path: '/my-equipment',       label: '수리신청',   icon: Wrench,         perm: 'REQUEST_USE' },
       { key: 'receipt-check',      path: '/receipt-check',      label: '수령검수',   icon: ClipboardCheck, perm: 'REQUEST_USE' },
@@ -73,8 +71,9 @@ const MENU_SECTIONS: MenuSection[] = [
   {
     key: 'etc', label: '기타',
     items: [
-      { key: 'stats-dashboard', path: '/stats',          label: '통계',     icon: PieChart, anyPerm: ['STATS_VIEW', 'SYSTEM_ADMIN'] },
-      { key: 'complaints',      path: '/complaints',     label: '민원·상담', icon: MessageSquare, anyPerm: ['REQUEST_USE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN'] },
+      { key: 'stats-dashboard', path: '/stats',          label: '통계',     icon: PieChart,    anyPerm: ['STATS_VIEW', 'SYSTEM_ADMIN'] },
+      { key: 'cost-analysis',   path: '/cost-analysis',  label: '비용분석', icon: PieChart,    perm: 'PURCHASE_MANAGE' },
+      { key: 'cost-reconcile',  path: '/cost-reconcile', label: '금액 관리', icon: DollarSign, anyPerm: ['STATS_VIEW_ALL', 'ACCOUNTING_CLOSE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN'] },
     ],
   },
   {
@@ -82,6 +81,7 @@ const MENU_SECTIONS: MenuSection[] = [
     items: [
       { key: 'users',      path: '/users',      label: '사용자',   icon: Users,      anyPerm: ['BASIC_MANAGE', 'SYSTEM_ADMIN'] },
       { key: 'audit-logs', path: '/audit-logs', label: '감사로그', icon: ScrollText, perm: 'BASIC_MANAGE' },
+      { key: 'doc-templates', path: '/doc-templates', label: '문서양식(자동화)', icon: FileText, perm: 'SYSTEM_ADMIN' },
       { key: 'system',     path: '/system',     label: '설정',     icon: Settings,   perm: 'SYSTEM_ADMIN' },
     ],
   },
@@ -98,19 +98,15 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [sessionOpts, setSessionOpts] = useState({ timeoutMin: 30, warnBeforeMin: 5 });
 
-  // 세션 타임아웃 설정 로드
+  // 세션 타임아웃 설정 로드 (민감 정보 없는 전용 엔드포인트 — 권한 무관)
   useEffect(() => {
     if (!user) return;
-    api('/system/settings')
-      .then((rows: any[]) => {
-        if (!Array.isArray(rows)) return;
-        const get = (key: string, def: number) => {
-          const r = rows.find((row: any) => row.key === key);
-          return r ? (parseInt(r.value) || def) : def;
-        };
+    api('/system/session-config')
+      .then((cfg: any) => {
+        if (!cfg || typeof cfg !== 'object') return;
         setSessionOpts({
-          timeoutMin: get('SESSION_TIMEOUT_MIN', 30),
-          warnBeforeMin: get('SESSION_WARN_BEFORE_MIN', 5),
+          timeoutMin: Number(cfg.timeoutMin) || 30,
+          warnBeforeMin: Number(cfg.warnBeforeMin) || 5,
         });
       })
       .catch(() => {});

@@ -1,19 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../utils/api';
 import PatientStatsPage from './PatientStatsPage';
-import { BigKpi, OverviewCard, MetricRow, ReportTable } from '../components/stats';
+import { BigKpi, OverviewCard } from '../components/stats';
 
-export default function PatientStatsTab({ deptId }: { deptId: string }) {
-  const [section, setSection] = useState<'operations' | 'finance' | 'info' | 'admin'>('operations');
-  const [complaintStats, setComplaintStats] = useState<any>(null);
+export default function PatientStatsTab({
+  deptId,
+  departments,
+  onDeptChange,
+  canViewAll,
+}: {
+  deptId: string;
+  departments?: Array<{ id: string; name: string }>;
+  onDeptChange?: (id: string) => void;
+  canViewAll?: boolean;
+}) {
+  const [section, setSection] = useState<'operations' | 'finance' | 'info'>('operations');
   const [financeData, setFinanceData] = useState<any>(null);
 
   useEffect(() => {
     const now = new Date();
     const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const to = now.toISOString().slice(0, 10);
-    const q = deptId ? `&department_id=${deptId}` : '';
-    api(`/complaints/stats?date_from=${from}&date_to=${to}${q}`).then(setComplaintStats).catch(() => {});
     api(`/patients/stats?date_from=${from}&date_to=${to}${deptId ? `&department_id=${deptId}` : ''}`).then(d => {
       setFinanceData(d);
     }).catch(() => {});
@@ -23,7 +30,6 @@ export default function PatientStatsTab({ deptId }: { deptId: string }) {
     { key: 'operations' as const, label: '병상 운영지표' },
     { key: 'finance' as const, label: '경영 및 재무' },
     { key: 'info' as const, label: '환자정보' },
-    { key: 'admin' as const, label: '행정지표' },
   ];
 
   return (
@@ -46,7 +52,15 @@ export default function PatientStatsTab({ deptId }: { deptId: string }) {
       </div>
 
       {/* 1. 병상 운영지표 */}
-      {section === 'operations' && <PatientStatsPage section="operations" />}
+      {section === 'operations' && (
+        <PatientStatsPage
+          section="operations"
+          deptId={deptId}
+          departments={departments}
+          onDeptChange={onDeptChange}
+          canViewAll={canViewAll}
+        />
+      )}
 
       {/* 2. 경영 및 재무 */}
       {section === 'finance' && (
@@ -71,30 +85,107 @@ export default function PatientStatsTab({ deptId }: { deptId: string }) {
             })()} color="rose" />
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <ReportTable
-              title="급여 항목별"
-              columns={[
-                { key: 'name', label: '항목' },
-                { key: 'total', label: '총액', align: 'right', render: (v: number) => `₩${(v || 0).toLocaleString()}` },
-                { key: 'count', label: '건수', align: 'right' },
-              ]}
-              data={Object.entries(financeData?.charges?.covered || {}).map(([name, v]: [string, any]) => ({
-                name, total: v.total || 0, count: v.count || 0,
-              }))}
-            />
-            <ReportTable
-              title="비급여 항목별"
-              columns={[
-                { key: 'name', label: '항목' },
-                { key: 'total', label: '총액', align: 'right', render: (v: number) => `₩${(v || 0).toLocaleString()}` },
-                { key: 'count', label: '건수', align: 'right' },
-              ]}
-              data={Object.entries(financeData?.charges?.non_covered || {}).map(([name, v]: [string, any]) => ({
-                name, total: v.total || 0, count: v.count || 0,
-              }))}
-            />
-          </div>
+          {(() => {
+            const months: string[] = financeData?.charges?.months ?? [];
+            const monthlyTotals = financeData?.charges?.monthly_totals ?? {};
+            const covered = financeData?.charges?.covered || {};
+            const nonCovered = financeData?.charges?.non_covered || {};
+            const fmt = (n: number) => `₩${(n || 0).toLocaleString()}`;
+            return (
+              <>
+                {/* 월별 합계 (기간이 여러 달이면 표시) */}
+                {months.length > 1 && (
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <div className="px-4 py-2 border-b text-sm font-medium bg-slate-50">월별 합계</div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-600 text-xs">
+                        <tr>
+                          <th className="text-left px-3 py-1.5">월</th>
+                          <th className="text-right px-3 py-1.5">급여</th>
+                          <th className="text-right px-3 py-1.5">비급여</th>
+                          <th className="text-right px-3 py-1.5">합계</th>
+                          <th className="text-right px-3 py-1.5">비급여 비중</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {months.map(m => {
+                          const r = monthlyTotals[m] || { covered: 0, non_covered: 0 };
+                          const total = r.covered + r.non_covered;
+                          const ncPct = total > 0 ? (r.non_covered / total) * 100 : 0;
+                          return (
+                            <tr key={m} className="border-t">
+                              <td className="px-3 py-1.5">{m}</td>
+                              <td className="text-right px-3 py-1.5 text-emerald-700">{fmt(r.covered)}</td>
+                              <td className="text-right px-3 py-1.5 text-amber-700">{fmt(r.non_covered)}</td>
+                              <td className="text-right px-3 py-1.5 font-semibold">{fmt(total)}</td>
+                              <td className="text-right px-3 py-1.5 text-slate-500">{ncPct.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 항목별 — 월별 컬럼으로 표시 */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <div className="px-4 py-2 border-b text-sm font-medium bg-slate-50">급여 항목별 (월)</div>
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="text-left px-3 py-1.5">항목</th>
+                          {months.map(m => <th key={m} className="text-right px-3 py-1.5">{m}</th>)}
+                          <th className="text-right px-3 py-1.5">합계</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(covered).map(([name, v]: [string, any]) => (
+                          <tr key={name} className="border-t">
+                            <td className="px-3 py-1.5">{name}</td>
+                            {months.map(m => (
+                              <td key={m} className="text-right px-3 py-1.5">{fmt(v.by_month?.[m] ?? 0)}</td>
+                            ))}
+                            <td className="text-right px-3 py-1.5 font-semibold">{fmt(v.total || 0)}</td>
+                          </tr>
+                        ))}
+                        {Object.keys(covered).length === 0 && (
+                          <tr><td colSpan={months.length + 2} className="text-center px-3 py-4 text-slate-400">데이터 없음</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <div className="px-4 py-2 border-b text-sm font-medium bg-slate-50">비급여 항목별 (월)</div>
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="text-left px-3 py-1.5">항목</th>
+                          {months.map(m => <th key={m} className="text-right px-3 py-1.5">{m}</th>)}
+                          <th className="text-right px-3 py-1.5">합계</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(nonCovered).map(([name, v]: [string, any]) => (
+                          <tr key={name} className="border-t">
+                            <td className="px-3 py-1.5">{name}</td>
+                            {months.map(m => (
+                              <td key={m} className="text-right px-3 py-1.5">{fmt(v.by_month?.[m] ?? 0)}</td>
+                            ))}
+                            <td className="text-right px-3 py-1.5 font-semibold">{fmt(v.total || 0)}</td>
+                          </tr>
+                        ))}
+                        {Object.keys(nonCovered).length === 0 && (
+                          <tr><td colSpan={months.length + 2} className="text-center px-3 py-4 text-slate-400">데이터 없음</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
 
           <OverviewCard title="진료비 수납 / 미수금">
             <p className="text-xs text-slate-400">진료비 데이터 입력 후 표시됩니다. (환자 편집 → 진료비 필드)</p>
@@ -103,25 +194,16 @@ export default function PatientStatsTab({ deptId }: { deptId: string }) {
       )}
 
       {/* 3. 환자정보 */}
-      {section === 'info' && <PatientStatsPage section="info" />}
-
-      {/* 4. 행정지표 — 민원/상담 */}
-      {section === 'admin' && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <BigKpi label="총 건수" value={`${complaintStats?.total ?? 0}건`} color="blue" />
-            <BigKpi label="민원" value={`${complaintStats?.complaint_count ?? 0}건`} color="red" />
-            <BigKpi label="상담" value={`${complaintStats?.counsel_count ?? 0}건`} color="green" />
-            <BigKpi label="처리율" value={`${complaintStats?.resolution_rate ?? 0}%`} color="amber" />
-          </div>
-
-          <OverviewCard title="처리 현황">
-            <MetricRow label="미처리" value={`${complaintStats?.open ?? 0}건`} />
-            <MetricRow label="처리중" value={`${complaintStats?.in_progress ?? 0}건`} />
-            <MetricRow label="완료" value={`${complaintStats?.closed ?? 0}건`} />
-          </OverviewCard>
-        </div>
+      {section === 'info' && (
+        <PatientStatsPage
+          section="info"
+          deptId={deptId}
+          departments={departments}
+          onDeptChange={onDeptChange}
+          canViewAll={canViewAll}
+        />
       )}
+
     </div>
   );
 }

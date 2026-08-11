@@ -43,7 +43,9 @@ interface SettingSection {
 
 // ── 상수 ───────────────────────────────────────────────────────────────
 const SCHEDULE_TYPE_LABEL: Record<string, string> = {
-  CONSUMABLE_REGULAR: '정기 소모품',
+  CONSUMABLE_MEDICAL: '의료소모품',
+  CONSUMABLE_REGULAR: '일반소모품',
+  CONSUMABLE_OFFICE: '사무용품',
   DIAPER: '기저귀',
   NIGHT_SNACK: '야간간식',
 };
@@ -108,7 +110,7 @@ const SECURITY_SECTIONS: SettingSection[] = [
   },
 ];
 
-type TabKey = 'basic' | 'organization' | 'users' | 'security' | 'backup' | 'integration';
+type TabKey = 'basic' | 'organization' | 'users' | 'security' | 'backup' | 'integration' | 'test-data';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'basic',        label: '기본정보'  },
@@ -117,6 +119,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'security',     label: '보안설정'  },
   { key: 'backup',       label: '백업/복구' },
   { key: 'integration', label: '외부연동' },
+  { key: 'test-data',   label: '테스트 데이터' },
 ];
 
 // ── 부서 헬퍼 ──────────────────────────────────────────────────────────
@@ -145,6 +148,126 @@ function buildGroupedRows(departments: Department[]): DeptRow[] {
     rows.push({ dept: child, parentName: byId.get(child.parent_id || '')?.name || '(상위 부서 없음)', isChild: true });
   }
   return rows;
+}
+
+// ── 테스트 데이터 탭 컴포넌트 ─────────────────────────────────────────
+// 5단계 워크플로우(신청→승인→발주→입고→불출) 체험용. is_test=true 데이터는
+// 통계 합산에서 자동 제외되고, 삭제 시 inventory까지 원복됨.
+function TestDataTab() {
+  const [status, setStatus] = useState<{ ward_requests: number; purchase_orders: number; goods_receipts: number; stock_outs: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<'seed' | 'delete' | null>(null);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const showMsg = (type: 'ok' | 'err', text: string) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const loadStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api('/test-data/status');
+      setStatus(data as any);
+    } catch (e: any) {
+      showMsg('err', e.message || '현황 조회 실패');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handleSeed = async () => {
+    setBusy('seed');
+    try {
+      const r = await api('/test-data/seed', { method: 'POST' }) as any;
+      showMsg('ok', r.message || '시드 완료');
+      await loadStatus();
+    } catch (e: any) {
+      showMsg('err', e.message || '시드 실패');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('테스트 데이터 전체를 삭제합니다. (재고는 시작 전 상태로 원복됩니다) 계속할까요?')) return;
+    setBusy('delete');
+    try {
+      const r = await api('/test-data', { method: 'DELETE' }) as any;
+      showMsg('ok', r.message || '삭제 완료');
+      await loadStatus();
+    } catch (e: any) {
+      showMsg('err', e.message || '삭제 실패');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const total = status ? (status.ward_requests + status.purchase_orders + status.goods_receipts + status.stock_outs) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <h3 className="text-base font-bold text-slate-700 mb-2">테스트 데이터 시드</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          5단계 워크플로우(신청 → 승인 → 발주 → 입고 → 불출)를 직접 클릭하며 체험할 수 있도록
+          정기 소모품 신청 데이터를 미리 박아둡니다. 시드된 신청은 <strong className="text-amber-600">통계에서 자동 제외</strong>되고,
+          아래 "전체 삭제" 버튼으로 한 번에 정리됩니다 (재고도 원복).
+        </p>
+        <div className="flex gap-2">
+          <button onClick={handleSeed} disabled={busy !== null} className="btn-primary">
+            {busy === 'seed' ? '시드 중...' : '+ 테스트 신청 시드'}
+          </button>
+          <button onClick={handleDelete} disabled={busy !== null || total === 0} className="px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40">
+            {busy === 'delete' ? '삭제 중...' : '× 전체 삭제'}
+          </button>
+          <button onClick={loadStatus} disabled={loading} className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200">
+            새로고침
+          </button>
+        </div>
+        {msg && (
+          <div className={`mt-3 p-2 rounded text-xs ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {msg.text}
+          </div>
+        )}
+      </div>
+
+      <div className="card p-5">
+        <h3 className="text-base font-bold text-slate-700 mb-3">현재 테스트 데이터 현황</h3>
+        {loading ? (
+          <div className="text-sm text-slate-400 py-4">불러오는 중...</div>
+        ) : status ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: '신청', value: status.ward_requests, key: 'wr' },
+              { label: '발주', value: status.purchase_orders, key: 'po' },
+              { label: '입고', value: status.goods_receipts, key: 'gr' },
+              { label: '불출', value: status.stock_outs, key: 'so' },
+            ].map(s => (
+              <div key={s.key} className={`border rounded-lg p-3 ${s.value > 0 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200'}`}>
+                <div className="text-xs text-slate-500">{s.label}</div>
+                <div className={`text-2xl font-bold ${s.value > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{s.value}건</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="card p-5">
+        <h3 className="text-base font-bold text-slate-700 mb-3">5단계 워크플로우 체험 가이드</h3>
+        <ol className="space-y-2 text-sm text-slate-600 list-decimal list-inside">
+          <li><strong>신청</strong>: 위에서 시드 버튼 → "물품관리 → 물품신청" 메뉴에서 TEST 배지 신청 확인</li>
+          <li><strong>승인</strong>: "물품관리 → 신청승인" 메뉴 → TEST 신청 검토 후 승인 (수량 조정 가능)</li>
+          <li><strong>발주</strong>: "물품관리 → 발주관리" 메뉴 → 거래처 선택, 품목·수량 확정 후 발주서 생성. 발주 시 'is_test: true' 자동 인식하려면 ApprovalPage에서 TEST 신청 기반으로 발주 생성하거나 발주 폼에서 is_test 체크</li>
+          <li><strong>입고</strong>: "물품관리 → 입고관리" 메뉴 → 발주 선택, 도착 수량 입력 → 자동으로 재고(on_hand_qty) 증가. TEST 발주 → TEST 입고로 자동 전파</li>
+          <li><strong>불출</strong>: "물품관리 → 불출관리" 메뉴 → 신청 부서로 출고. TEST 신청 기반이면 TEST 불출로 전파, 재고 차감</li>
+          <li>모두 끝나면 위 "전체 삭제" 버튼으로 정리. 재고는 시드 시작 전 값으로 자동 원복.</li>
+        </ol>
+      </div>
+    </div>
+  );
 }
 
 // ── 외부연동 탭 컴포넌트 ──────────────────────────────────────────────
@@ -678,6 +801,9 @@ export default function SystemPage() {
 
       {/* ── 외부연동 탭 ── */}
       {tab === 'integration' && <IntegrationTab />}
+
+      {/* ── 테스트 데이터 탭 ── */}
+      {tab === 'test-data' && <TestDataTab />}
 
       {/* ── 부서 모달 ── */}
       {deptModal && (

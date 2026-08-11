@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { patientWriteGuard } from './db/patient-write-guard';
 import { execSync } from 'child_process';
 import fs from 'fs';
 
@@ -20,19 +21,14 @@ try {
   );
   console.log('Migrations complete.');
 } catch (e) {
-  console.log('Migration deploy failed, trying db push...');
-  try {
-    execSync(
-      `"${prismaBin}" db push --accept-data-loss --schema="${path.join(prismaDir, 'schema.prisma')}"`,
-      { env: { ...process.env, DATABASE_URL }, stdio: 'inherit' }
-    );
-    console.log('DB push complete.');
-  } catch (e2) {
-    console.error('DB push also failed:', (e2 as Error).message);
-  }
+  console.error('Migration deploy failed. 서버를 중단합니다. 데이터 손실 위험이 있으므로 수동 확인이 필요합니다.');
+  console.error((e as Error).message);
+  process.exit(1);
 }
 
-export const prisma = new PrismaClient();
+// patientWriteGuard: 모든 patient/ward_room_board 쓰기에 sanitization 자동 적용.
+// 정규화 우회 경로(예: referral 승인 등)에서도 enum 필드 빈값 진입 차단.
+export const prisma = new PrismaClient().$extends(patientWriteGuard) as unknown as PrismaClient;
 
 // Backward compatibility for legacy DBs that may miss this column.
 prisma.$executeRawUnsafe('ALTER TABLE users ADD COLUMN menu_permissions TEXT').catch(() => {});
@@ -85,6 +81,14 @@ prisma.$executeRawUnsafe(`UPDATE ward_room_boards SET status='DISCHARGED' WHERE 
       await prisma.user.update({ where: { id: u.id }, data: { direct_permissions: JSON.stringify(newPerms) } });
     }
     console.log('Permission migration complete.');
+
+    // 묶음 권한(REQUEST_USE 등)을 하위 개별 권한으로 분해 — UI는 하위 키만 토글 가능
+    // (역방향 검사로 묶음 라우트 검사도 그대로 통과)
+    const { flattenLegacyBundlePermissions } = await import('./services/perm-bootstrap');
+    const flattened = await flattenLegacyBundlePermissions(prisma);
+    if (flattened > 0) {
+      console.log(`[perm-bootstrap] ${flattened}명 사용자의 묶음 권한을 개별 권한으로 분해`);
+    }
   } catch (e) {
     console.error('Permission migration error:', e);
   }
@@ -141,10 +145,9 @@ import systemRoutes       from './routes/system';
 import deptPermRoutes         from './routes/dept-permissions';
 import requestScheduleRoutes  from './routes/request-schedules';
 import deptCalendarRoutes     from './routes/dept-calendar';
-import masterCodesRoutes      from './routes/master-codes';
+import masterCodesRoutes, { reloadUserMidCategories } from './routes/master-codes';
 import diseaseCodeRoutes      from './routes/disease-codes';
 import menuScopeRoutes        from './routes/menu-scopes';
-import usageRoutes            from './routes/usage';
 import loanRoutes             from './routes/loans';
 import menuPolicyRoutes       from './routes/menu-policies';
 import equipmentUnitsRoutes     from './routes/equipment-units';
@@ -158,9 +161,13 @@ import inventoryStatsRoutes        from './routes/inventory-stats';
 import stockoutStatsRoutes         from './routes/stockout-stats';
 import hiraApiRoutes               from './routes/hira-api';
 import hiraDiseaseStatsRoutes      from './routes/hira-disease-stats';
-import complaintRoutes             from './routes/complaints';
-import patientChargeRoutes         from './routes/patient-charges';
-import referralRoutes              from './routes/referral';
+import testDataRoutes              from './routes/test-data';
+import patientItemMappingRoutes    from './routes/patient-item-mapping';
+import costAnalysisRoutes          from './routes/cost-analysis';
+import costReconcileRoutes         from './routes/cost-reconcile';
+import purchaseDecisionRoutes      from './routes/purchase-decisions';
+import orderRoutingRoutes          from './routes/order-routing';
+import docTemplateRoutes           from './routes/doc-templates';
 
 app.use('/api/auth',           authRoutes);
 app.use('/api/departments',    departmentRoutes);
@@ -170,6 +177,7 @@ app.use('/api/items',          itemRoutes);
 app.use('/api/baselines',      baselineRoutes);
 app.use('/api/patient-stats',  patientStatRoutes);
 app.use('/api/patients',       patientRoutes);
+app.use('/api/patient-item-mapping', patientItemMappingRoutes);
 app.use('/api/ward-requests',  wardRequestRoutes);
 app.use('/api/approvals',      approvalRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
@@ -179,18 +187,18 @@ app.use('/api/receipt-check',  receiptCheckRoutes);
 app.use('/api/inventory',      inventoryRoutes);
 app.use('/api/dashboard',      dashboardRoutes);
 app.use('/api/cost',           costRoutes);
+app.use('/api/cost-analysis',  costAnalysisRoutes);
+app.use('/api/cost-reconcile', costReconcileRoutes);
 app.use('/api/audit-logs',     auditLogRoutes);
 app.use('/api/system',         systemRoutes);
 app.use('/api/dept-permissions',   deptPermRoutes);
 app.use('/api/request-schedules', requestScheduleRoutes);
 app.use('/api/dept-calendar',    deptCalendarRoutes);
 app.use('/api/item-categories',  masterCodesRoutes.itemCategories);
-app.use('/api/stats-categories', masterCodesRoutes.statsCategories);
 app.use('/api/expense-scopes',   masterCodesRoutes.expenseScopes);
 app.use('/api/disease-codes',    diseaseCodeRoutes);
 app.use('/api/menu-scopes',      menuScopeRoutes);
 app.use('/api/menu-policies',    menuPolicyRoutes);
-app.use('/api/usage',            usageRoutes);
 app.use('/api/loans',            loanRoutes);
 app.use('/api/equipment-units',  equipmentUnitsRoutes);
 app.use('/api/ai',               aiRoutes);
@@ -203,9 +211,10 @@ app.use('/api/inventory-stats',  inventoryStatsRoutes);
 app.use('/api/stockout-stats',   stockoutStatsRoutes);
 app.use('/api/hira',             hiraApiRoutes);
 app.use('/api/hira-disease-stats', hiraDiseaseStatsRoutes);
-app.use('/api/complaints',        complaintRoutes);
-app.use('/api/patient-charges',   patientChargeRoutes);
-app.use('/api/referral',          referralRoutes);
+app.use('/api/test-data',         testDataRoutes);
+app.use('/api/purchase-decisions', purchaseDecisionRoutes);
+app.use('/api/order-routing',     orderRoutingRoutes);
+app.use('/api/doc-templates',     docTemplateRoutes);
 
 // Static uploads
 const uploadsDir = path.join(process.env.USER_DATA_PATH || '.', 'uploads');
@@ -251,6 +260,8 @@ cron.schedule('30 2 * * *', () => { runHealthChecks('all').catch(e => console.er
 const SERVER_HOST = process.env.SERVER_HOST || '127.0.0.1';
 app.listen(PORT, SERVER_HOST, () => {
   console.log(`Server running on ${SERVER_HOST}:${PORT}`);
+  // 사용자 추가 중분류 레지스트리 적재 (shared/types 의 분류 도출이 참조)
+  reloadUserMidCategories().catch(e => console.error('[reloadUserMidCategories] init error:', e));
   // 서버 시작 시 전체 검사 1회 실행
   setTimeout(() => { runHealthChecks('all').catch(e => console.error('[HealthCheck] init error:', e)); }, 3000);
 });

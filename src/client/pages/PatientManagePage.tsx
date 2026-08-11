@@ -1,9 +1,20 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'lucide-react';
 import { api } from '../utils/api';
 import { useAuth } from '../hooks/useAuth';
 import { PageHeader } from '../components/ui';
+import { StatsKpiCard } from '../components/stats';
 import type { HiraDiseaseCodeResult } from '@shared/types';
+import {
+  REHAB_TYPES,
+  getRehabBadgeClass,
+  getRehabTypeLabel,
+  getOnsetDays,
+  getOnsetBucketKey,
+  getOnsetBucketLabel,
+  formatOnsetDuration,
+  ONSET_BUCKETS,
+} from '@shared/types';
 
 type MajorTab = 'patients' | 'board' | 'disease';
 type DiseaseSubTab = 'reregistration' | 'codes';
@@ -49,6 +60,8 @@ interface PatientRow {
   period_type: string;
   period_phase: string;
   patient_group: string;
+  rehab_type: string;
+  onset_date: string | null;
   diaper_state: string;
   diaper_price: number | null;
   diaper_start_date: string | null;
@@ -98,6 +111,8 @@ interface BoardCell {
   period_start_date?: string;
   period_end_date?: string;
   patient_group: string;
+  rehab_type: string;
+  onset_date: string | null;
   diaper_state: string;
   diaper_price: number | null;
   diaper_start_date?: string | null;
@@ -314,11 +329,15 @@ const valueLabel = {
     LOW: '경도',
     SELECT: '선택',
     UNRATED: '미평가',
+    PNEUMONIA: '폐렴',
+    SEPSIS: '패혈증',
+    INFECTION: '감염',
   } as Record<string, string>,
   period_type: { PNEUMONIA: '폐렴', SEPSIS: '패혈증' } as Record<string, string>,
   period_phase: { START: '시작', END: '종료' } as Record<string, string>,
   diaper_state: { IN_HOUSE: '원내', PERSONAL: '본인', NONE: '미사용', CIRCLE: '원내', TRIANGLE: '본인' } as Record<string, string>,
   infection_strain: { CRE: 'CRE', VRE: 'VRE', MR: 'MR' } as Record<string, string>,
+  rehab_type: { CNS: 'CNS', OS: 'CNS 외', OUTPATIENT: '외래' } as Record<string, string>,
 };
 
 const toLabel = (kind: keyof typeof valueLabel, value?: string) => {
@@ -336,6 +355,27 @@ const normalizeGenderForColor = (value?: string) => {
   return raw;
 };
 const isWardName = (name?: string) => String(name ?? '').includes('병동');
+
+function DistCard({ title, data, labelMap }: { title: string; data: Record<string, number>; labelMap: Record<string, string> }) {
+  const entries = Object.entries(data).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="border border-slate-100 rounded-lg p-2.5">
+      <p className="text-[11px] font-semibold text-slate-500 mb-1.5">{title}</p>
+      {entries.length === 0 ? (
+        <p className="text-xs text-slate-300">해당 없음</p>
+      ) : (
+        <div className="space-y-1">
+          {entries.map(([key, val]) => (
+            <div key={key} className="flex justify-between text-xs">
+              <span className="text-slate-600">{labelMap[key] ?? key}</span>
+              <span className="font-semibold text-slate-800">{val}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PatientManagePage() {
   const { user } = useAuth();
@@ -356,8 +396,17 @@ export default function PatientManagePage() {
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ADMITTED' | 'DISCHARGED' | ''>('ADMITTED');
+  const [wardFilter, setWardFilter] = useState<string>('');
+  const [insuranceFilter, setInsuranceFilter] = useState<string>('');
+  const [patientGroupFilter, setPatientGroupFilter] = useState<string>('');
+  const [specializationFilter, setSpecializationFilter] = useState<string>('');
+  const [diaperFilter, setDiaperFilter] = useState<'' | 'USE' | 'NONE'>('');
+  const [rehabFilter, setRehabFilter] = useState<string>('');
+  const [onsetFilter, setOnsetFilter] = useState<string>(''); // ONSET_BUCKET key | 'NONE'
+  const [statsOpen, setStatsOpen] = useState(false);
   const [listAdmitOpen, setListAdmitOpen] = useState(false);
   const [admitLoading, setAdmitLoading] = useState(false);
+  const admittingRef = useRef(false);
   const [listAdmitForm, setListAdmitForm] = useState({
     department_id: '',
     room_no: '',
@@ -372,6 +421,7 @@ export default function PatientManagePage() {
     specializations: [] as string[],
     infection_strain: '',
     period_type: '',
+    period_phase: '',
     period_start_date: '',
     period_end_date: '',
     diaper_state: 'NONE',
@@ -396,11 +446,13 @@ export default function PatientManagePage() {
     address: '',
     referral_source: '',
     discharge_type: '',
+    rehab_type: '',
+    onset_date: '',
   });
 
   const [selectedCell, setSelectedCell] = useState<BoardCell | null>(null);
   const [savingCell, setSavingCell] = useState(false);
-  const [cellEditTab, setCellEditTab] = useState<0|1|2|3|4>(0);
+  const [cellEditTab, setCellEditTab] = useState<0|1|2|3>(0);
   const [patientEvents, setPatientEvents] = useState<any[]>([]);
   const [dischargeModalOpen, setDischargeModalOpen] = useState(false);
   const [dischargeForm, setDischargeForm] = useState({ type: '', reason: '' });
@@ -408,10 +460,13 @@ export default function PatientManagePage() {
   const [hospiceRooms, setHospiceRooms] = useState<any[]>([]);
   const [chargeMonth, setChargeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [chargeItems, setChargeItems] = useState<{ category: string; item_name: string; amount: number }[]>([]);
-  const [chargeSaving, setChargeSaving] = useState(false);
   const [chargeLoadedFor, setChargeLoadedFor] = useState(''); // 어떤 환자의 데이터가 로드됐는지 추적
   const COVERED_ITEMS = ['임종실', '고빈도흉벽', '산소', '가온가습고유량'];
   const NON_COVERED_ITEMS = ['기저귀', '간병', '영양제', '상급병실료', '엠블비', '도수', '기타/약품비'];
+  const emptyChargeItems = () => [
+    ...COVERED_ITEMS.map(n => ({ category: 'COVERED', item_name: n, amount: 0 })),
+    ...NON_COVERED_ITEMS.map(n => ({ category: 'NON_COVERED', item_name: n, amount: 0 })),
+  ];
   const loadCharges = async (patientId: string, month: string) => {
     try {
       const data = await api(`/patients/${patientId}/charges?month=${month}`);
@@ -422,24 +477,18 @@ export default function PatientManagePage() {
       setChargeItems(items);
       setChargeLoadedFor(patientId);
     } catch {
-      setChargeItems([...COVERED_ITEMS.map(n => ({ category: 'COVERED', item_name: n, amount: 0 })), ...NON_COVERED_ITEMS.map(n => ({ category: 'NON_COVERED', item_name: n, amount: 0 }))]);
+      setChargeItems(emptyChargeItems());
       setChargeLoadedFor(patientId);
     }
   };
-  const saveCharges = async () => {
-    if (!selectedCell?.patient_id) return;
-    // 현재 로드된 금액 데이터가 다른 환자 것이면 저장 차단
-    if (chargeLoadedFor && chargeLoadedFor !== selectedCell.patient_id) {
+  // 환자/월 변경 시 즉시 0원 구조체로 리셋(input은 그대로 보이되 잔상 차단) → 비동기 재로드.
+  useEffect(() => {
+    setChargeItems(emptyChargeItems());
+    setChargeLoadedFor('');
+    if (selectedCell?.patient_id) {
       loadCharges(selectedCell.patient_id, chargeMonth);
-      return;
     }
-    setChargeSaving(true);
-    try {
-      await api(`/patients/${selectedCell.patient_id}/charges`, { method: 'PUT', body: JSON.stringify({ month: chargeMonth, items: chargeItems }) });
-      showMsg('ok', '저장 완료');
-    } catch (e: any) { showMsg('err', e.message); }
-    finally { setChargeSaving(false); }
-  };
+  }, [selectedCell?.patient_id, chargeMonth]);
 
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferWardId, setTransferWardId] = useState('');
@@ -464,6 +513,12 @@ export default function PatientManagePage() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: { row: number; message: string }[] } | null>(null);
   const [bulkDragOver, setBulkDragOver] = useState(false);
+
+  // 엑셀 최신화 모달
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncFiles, setSyncFiles] = useState<File[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
 
   // 주상병 관리 탭 상태
   const [diseaseSubTab, setDiseaseSubTab] = useState<DiseaseSubTab>('reregistration');
@@ -713,7 +768,72 @@ export default function PatientManagePage() {
     }
   }, [majorTab, loadDiseaseCodes, loadPatientDiseaseRows]);
 
-  const mergedPatients = useMemo(() => patients, [patients]);
+  const mergedPatients = useMemo(() => {
+    return patients.filter(p => {
+      if (wardFilter && p.department_id !== wardFilter) return false;
+      if (insuranceFilter && p.insurance_type !== insuranceFilter) return false;
+      if (patientGroupFilter && p.patient_group !== patientGroupFilter) return false;
+      if (specializationFilter && !(p.specializations || []).includes(specializationFilter)) return false;
+      if (diaperFilter === 'USE' && (!p.diaper_state || p.diaper_state === 'NONE')) return false;
+      if (diaperFilter === 'NONE' && p.diaper_state && p.diaper_state !== 'NONE') return false;
+      if (rehabFilter) {
+        if (rehabFilter === 'NONE' && p.rehab_type) return false;
+        if (rehabFilter !== 'NONE' && p.rehab_type !== rehabFilter) return false;
+      }
+      if (onsetFilter) {
+        if (onsetFilter === 'NONE') {
+          if (p.onset_date) return false;
+        } else {
+          const key = getOnsetBucketKey(p.onset_date);
+          if (key !== onsetFilter) return false;
+        }
+      }
+      return true;
+    });
+  }, [patients, wardFilter, insuranceFilter, patientGroupFilter, specializationFilter, diaperFilter, rehabFilter, onsetFilter]);
+
+  const patientStats = useMemo(() => {
+    const byGroup: Record<string, number> = {};
+    const byInsurance: Record<string, number> = {};
+    const bySpec: Record<string, number> = {};
+    const byRehab: Record<string, number> = {};
+    const byOnsetBucket: Record<string, number> = {};
+    const byOnsetCNS: Record<string, number> = {};
+    const byOnsetOS: Record<string, number> = {};
+    let diaperUse = 0, diaperNone = 0;
+    let admitted = 0, discharged = 0;
+    for (const p of mergedPatients) {
+      if (p.status === 'ADMITTED') admitted++;
+      else if (p.status === 'DISCHARGED') discharged++;
+      // 환자군 카운트: 폐렴/패혈증/다제내성균 → '감염' 으로 통합
+      const isInfection =
+        p.patient_group === 'PNEUMONIA' ||
+        p.patient_group === 'SEPSIS' ||
+        p.patient_group === 'INFECTION' ||
+        (p.infection_strain && String(p.infection_strain).trim() !== '');
+      const groupKey = isInfection ? 'INFECTION' : (p.patient_group || '');
+      if (groupKey) byGroup[groupKey] = (byGroup[groupKey] || 0) + 1;
+      if (p.insurance_type) byInsurance[p.insurance_type] = (byInsurance[p.insurance_type] || 0) + 1;
+      (p.specializations || []).forEach(s => { bySpec[s] = (bySpec[s] || 0) + 1; });
+      if (p.diaper_state && p.diaper_state !== 'NONE') diaperUse++;
+      else diaperNone++;
+      const rehabKey = p.rehab_type || 'NONE';
+      byRehab[rehabKey] = (byRehab[rehabKey] || 0) + 1;
+      if (p.rehab_type === 'CNS' || p.rehab_type === 'OS') {
+        const bk = getOnsetBucketKey(p.onset_date) || 'none';
+        byOnsetBucket[bk] = (byOnsetBucket[bk] || 0) + 1;
+        const target = p.rehab_type === 'CNS' ? byOnsetCNS : byOnsetOS;
+        target[bk] = (target[bk] || 0) + 1;
+      }
+    }
+    return {
+      total: mergedPatients.length,
+      admitted, discharged,
+      byGroup, byInsurance, bySpec,
+      byRehab, byOnsetBucket, byOnsetCNS, byOnsetOS,
+      diaperUse, diaperNone,
+    };
+  }, [mergedPatients]);
   const diseaseCodeLabelById = useMemo(() => {
     const map: Record<string, string> = {};
     for (const code of diseaseCodes) {
@@ -777,6 +897,8 @@ export default function PatientManagePage() {
           address: selectedCell.address || '',
           referral_source: selectedCell.referral_source || '',
           discharge_type: selectedCell.discharge_type || '',
+          rehab_type: selectedCell.rehab_type || '',
+          onset_date: selectedCell.onset_date || null,
           note: selectedCell.note,
           status: selectedCell.status,
           ...(selectedCell.admitted_at ? { admitted_at: selectedCell.admitted_at } : {}),
@@ -796,8 +918,17 @@ export default function PatientManagePage() {
           });
         } catch { /* V코드 저장 실패는 무시 */ }
       }
+      // 비급여/급여 월별 금액도 같이 저장 (현재 환자 데이터가 로드된 상태에서만)
+      if (selectedCell.patient_id && chargeLoadedFor === selectedCell.patient_id && chargeItems.length > 0) {
+        try {
+          await api(`/patients/${selectedCell.patient_id}/charges`, {
+            method: 'PUT',
+            body: JSON.stringify({ month: chargeMonth, items: chargeItems }),
+          });
+        } catch { /* 금액 저장 실패해도 메인 저장은 성공으로 처리 */ }
+      }
       setSelectedCell(null);
-      showMsg('ok', '병상 정보 저장 완료');
+      showMsg('ok', '저장 완료');
       loadBoard();
       loadPatients();
     } catch (e: any) {
@@ -861,6 +992,36 @@ export default function PatientManagePage() {
 
   const closeBulkModal = () => {
     setBulkModalOpen(false);
+  };
+
+  const openSyncModal = () => {
+    setSyncModalOpen(true);
+    setSyncFiles([]);
+    setSyncResult(null);
+  };
+
+  const runSyncExcel = async () => {
+    if (syncFiles.length === 0) return;
+    setSyncLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const fd = new FormData();
+      syncFiles.forEach(f => fd.append('files', f));
+      const res = await fetch('/api/patients/sync-excel', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '최신화 실패');
+      setSyncResult(json);
+      loadPatients();
+      loadBoard();
+    } catch (e: any) {
+      showMsg('err', e.message || '최신화 실패');
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   const handleBulkFileSelect = async (file: File) => {
@@ -930,6 +1091,7 @@ export default function PatientManagePage() {
       specializations: [],
       infection_strain: '',
       period_type: '',
+      period_phase: '',
       period_start_date: '',
       period_end_date: '',
       diaper_state: 'NONE',
@@ -954,11 +1116,14 @@ export default function PatientManagePage() {
       address: '',
       referral_source: '',
       discharge_type: '',
+      rehab_type: '',
+      onset_date: '',
     });
     setListAdmitOpen(true);
   };
 
   const admitFromList = async () => {
+    if (admittingRef.current) return;
     if (!listAdmitForm.department_id || !listAdmitForm.room_no || !listAdmitForm.bed_no || !listAdmitForm.chart_no || !listAdmitForm.name) {
       showMsg('err', '병동/병실/자리/차트번호/이름을 입력해 주세요.');
       return;
@@ -968,6 +1133,7 @@ export default function PatientManagePage() {
       showMsg('err', projectError);
       return;
     }
+    admittingRef.current = true;
     setAdmitLoading(true);
     try {
       // 입원전병원 자동 등록
@@ -990,7 +1156,7 @@ export default function PatientManagePage() {
           specializations: listAdmitForm.specializations,
           infection_strain: listAdmitForm.infection_strain,
           period_type: listAdmitForm.period_type,
-          period_phase: '',
+          period_phase: listAdmitForm.period_phase || '',
           period_start_date: listAdmitForm.period_start_date || '',
           period_end_date: listAdmitForm.period_end_date || '',
           diaper_state: listAdmitForm.diaper_state,
@@ -1009,6 +1175,8 @@ export default function PatientManagePage() {
           project_sigungu_office: listAdmitForm.project_sigungu_office || '',
           address: listAdmitForm.address || '',
           referral_source: listAdmitForm.referral_source || '',
+          rehab_type: listAdmitForm.rehab_type || '',
+          onset_date: listAdmitForm.onset_date || null,
           admitted_at: listAdmitForm.admitted_at,
           note: listAdmitForm.note || '',
           disease_code_id: listAdmitForm.disease_code_id || null,
@@ -1024,6 +1192,7 @@ export default function PatientManagePage() {
       showMsg('err', e.message);
     } finally {
       setAdmitLoading(false);
+      admittingRef.current = false;
     }
   };
 
@@ -1237,11 +1406,14 @@ export default function PatientManagePage() {
   };
 
   const admitFromBoard = async () => {
+    if (admittingRef.current) return;
     if (!selectedCell) return;
     if (!selectedCell.patient_name?.trim()) return showMsg('err', '성명을 입력해 주세요.');
     if (!selectedCell.chart_no?.trim()) return showMsg('err', '차트번호를 입력해 주세요.');
     const projectError = validateProjectScopeInput(selectedCell.project_name, selectedCell.project_region, selectedCell.project_sigungu_office);
     if (projectError) return showMsg('err', projectError);
+    admittingRef.current = true;
+    setAdmitLoading(true);
     try {
       await api('/patients/admit', {
         method: 'POST',
@@ -1259,7 +1431,7 @@ export default function PatientManagePage() {
           specializations: selectedCell.specializations || [],
           infection_strain: selectedCell.infection_strain || '',
           period_type: selectedCell.period_type || '',
-          period_phase: '',
+          period_phase: selectedCell.period_phase || '',
           period_start_date: selectedCell.period_start_date || '',
           period_end_date: selectedCell.period_end_date || '',
           diaper_state: selectedCell.diaper_state || '',
@@ -1276,6 +1448,8 @@ export default function PatientManagePage() {
           project_name: selectedCell.project_name || '',
           project_region: selectedCell.project_region || '',
           project_sigungu_office: selectedCell.project_sigungu_office || '',
+          rehab_type: selectedCell.rehab_type || '',
+          onset_date: selectedCell.onset_date || null,
           admitted_at: boardDate,
           note: selectedCell.note || '',
           disease_code_id: selectedCell.disease_code_id || null,
@@ -1289,6 +1463,9 @@ export default function PatientManagePage() {
       loadPatients();
     } catch (e: any) {
       showMsg('err', e.message);
+    } finally {
+      setAdmitLoading(false);
+      admittingRef.current = false;
     }
   };
 
@@ -1336,13 +1513,109 @@ export default function PatientManagePage() {
       {majorTab === 'patients' && (
         <div className="space-y-3">
           <div className="card p-3 flex flex-wrap gap-2 items-center">
-            <input className="input w-56" value={search} onChange={e => setSearch(e.target.value)} placeholder="이름/환자번호/병실 검색" />
+            <input className="input w-56 shrink-0" value={search} onChange={e => setSearch(e.target.value)} placeholder="이름/환자번호/병실 검색" />
             <SelectField value={statusFilter} onChange={v => setStatusFilter(v as any)} options={[
               { v: 'ADMITTED', l: '입원중' }, { v: 'DISCHARGED', l: '퇴원' }, { v: '', l: '전체' },
             ]} />
-            <button onClick={loadPatients} className="btn-secondary">조회</button>
-            <button onClick={openListAdmitModal} className="btn-primary">입원 등록</button>
-            <button onClick={openBulkModal} className="btn-secondary">엑셀/CSV 대량등록</button>
+            <select className="input text-xs w-28 shrink-0" value={wardFilter} onChange={e => setWardFilter(e.target.value)}>
+              <option value="">전체 병동</option>
+              {wards.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={insuranceFilter} onChange={e => setInsuranceFilter(e.target.value)}>
+              <option value="">전체 보험</option>
+              <option value="HEALTH">건강보험</option>
+              <option value="MEDICAL_1">의료급여 1종</option>
+              <option value="MEDICAL_2">의료급여 2종</option>
+              <option value="WORKERS_COMP">산재보험</option>
+              <option value="AUTO_INS">자동차보험</option>
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={patientGroupFilter} onChange={e => setPatientGroupFilter(e.target.value)}>
+              <option value="">전체 환자군</option>
+              <option value="HIGHEST">최고도</option>
+              <option value="HIGH">고도</option>
+              <option value="MEDIUM">중도</option>
+              <option value="LOW">경도</option>
+              <option value="SELECT">선택</option>
+              <option value="UNRATED">미평가</option>
+              <option value="INFECTION">감염</option>
+              <option value="PNEUMONIA">폐렴</option>
+              <option value="SEPSIS">패혈증</option>
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={specializationFilter} onChange={e => setSpecializationFilter(e.target.value)}>
+              <option value="">전체 특성화</option>
+              {SPECIALIZATION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={diaperFilter} onChange={e => setDiaperFilter(e.target.value as any)}>
+              <option value="">기저귀 전체</option>
+              <option value="USE">사용</option>
+              <option value="NONE">미사용</option>
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={rehabFilter} onChange={e => setRehabFilter(e.target.value)}>
+              <option value="">재활구분 전체</option>
+              {REHAB_TYPES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              <option value="NONE">해당없음</option>
+            </select>
+            <select className="input text-xs w-28 shrink-0" value={onsetFilter} onChange={e => setOnsetFilter(e.target.value)}>
+              <option value="">Onset 전체</option>
+              {ONSET_BUCKETS.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}
+              <option value="NONE">미입력</option>
+            </select>
+            {(wardFilter || insuranceFilter || patientGroupFilter || specializationFilter || diaperFilter || rehabFilter || onsetFilter) && (
+              <button className="btn-secondary text-xs shrink-0" onClick={() => { setWardFilter(''); setInsuranceFilter(''); setPatientGroupFilter(''); setSpecializationFilter(''); setDiaperFilter(''); setRehabFilter(''); setOnsetFilter(''); }}>초기화</button>
+            )}
+            <span className="text-xs text-slate-500 whitespace-nowrap shrink-0 ml-auto">총 {mergedPatients.length}명</span>
+            <button onClick={loadPatients} className="btn-secondary shrink-0">조회</button>
+            <button onClick={openListAdmitModal} className="btn-primary shrink-0">입원 등록</button>
+            <button onClick={openBulkModal} className="btn-secondary shrink-0">엑셀/CSV</button>
+            <button onClick={openSyncModal} className="btn-secondary shrink-0">엑셀로 최신화</button>
+          </div>
+
+          <div className="card">
+            <button
+              onClick={() => setStatsOpen(o => !o)}
+              className="w-full flex items-center justify-between p-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <span>📊 통계 보기 ({patientStats.total}명 기준)</span>
+              <span className="text-slate-400">{statsOpen ? '▲' : '▼'}</span>
+            </button>
+            {statsOpen && (
+              <div className="border-t border-slate-100 p-3 space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <StatsKpiCard label="총 인원" value={patientStats.total} />
+                  <StatsKpiCard label="입원중" value={patientStats.admitted} valueColor="text-green-600" />
+                  <StatsKpiCard label="퇴원" value={patientStats.discharged} valueColor="text-slate-500" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  <DistCard title="환자군" data={patientStats.byGroup} labelMap={valueLabel.patient_group} />
+                  <DistCard title="보험" data={patientStats.byInsurance} labelMap={valueLabel.insurance_type} />
+                  <DistCard title="특성화" data={patientStats.bySpec} labelMap={Object.fromEntries(SPECIALIZATION_OPTIONS.map(o => [o.value, o.label]))} />
+                  <DistCard title="기저귀" data={{ USE: patientStats.diaperUse, NONE: patientStats.diaperNone }} labelMap={{ USE: '사용', NONE: '미사용' }} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <DistCard
+                    title="재활구분"
+                    data={patientStats.byRehab}
+                    labelMap={{ CNS: 'CNS', OS: 'CNS 외', OUTPATIENT: '외래', NONE: '해당없음' }}
+                  />
+                  <DistCard
+                    title="Onset (CNS)"
+                    data={patientStats.byOnsetCNS}
+                    labelMap={{
+                      lt6m: '~6m', '6m_1y6m': '6m~1y6m', '1y6m_2y': '1y6m~2y',
+                      '2y_5y': '2y~5y', '5y_7y': '5y~7y', gt7y: '7y+', none: '미입력',
+                    }}
+                  />
+                  <DistCard
+                    title="Onset (CNS 외)"
+                    data={patientStats.byOnsetOS}
+                    labelMap={{
+                      lt6m: '~6m', '6m_1y6m': '6m~1y6m', '1y6m_2y': '1y6m~2y',
+                      '2y_5y': '2y~5y', '5y_7y': '5y~7y', gt7y: '7y+', none: '미입력',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="card p-0 overflow-auto">
@@ -1350,11 +1623,14 @@ export default function PatientManagePage() {
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>차트번호</th><th>이름</th><th>병동</th><th>병실</th><th>자리</th><th>보험</th><th>환자군</th><th>특성화</th><th>기저귀</th><th>상태</th><th>처리</th>
+                    <th>차트번호</th><th>이름</th><th>병동</th><th>병실</th><th>자리</th><th>보험</th><th>환자군</th><th>재활</th><th>발병일</th><th>경과</th><th>특성화</th><th>기저귀</th><th>상태</th><th>처리</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mergedPatients.map(r => (
+                  {mergedPatients.map(r => {
+                    const onsetDays = getOnsetDays(r.onset_date);
+                    const onsetBucket = getOnsetBucketKey(r.onset_date);
+                    return (
                     <tr key={r.id}>
                       <td className="text-xs font-mono">{r.chart_no}</td>
                       <td>{r.name}</td>
@@ -1363,6 +1639,20 @@ export default function PatientManagePage() {
                       <td>{r.bed_no ?? '-'}</td>
                       <td className="text-xs">{toLabel('insurance_type', r.insurance_type)}</td>
                       <td className="text-xs">{toLabel('patient_group', r.patient_group)}</td>
+                      <td className="text-xs">
+                        {r.rehab_type ? (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${getRehabBadgeClass(r.rehab_type)}`}>{getRehabTypeLabel(r.rehab_type)}</span>
+                        ) : <span className="text-slate-300">-</span>}
+                      </td>
+                      <td className="text-xs">{r.onset_date ? r.onset_date.slice(0, 10) : <span className="text-slate-300">-</span>}</td>
+                      <td className="text-xs">
+                        {onsetDays !== null ? (
+                          <span className="whitespace-nowrap">
+                            <span className="font-semibold">{formatOnsetDuration(onsetDays)}</span>
+                            <span className="text-slate-400 ml-1">{getOnsetBucketLabel(onsetBucket)}</span>
+                          </span>
+                        ) : <span className="text-slate-300">-</span>}
+                      </td>
                       <td className="text-xs">{(r.specializations || []).map(v => (SPECIALIZATION_OPTIONS.find(o => o.value === v)?.label ?? v)).join(', ') || '-'}</td>
                       <td className="text-xs">{r.diaper_state ? `${toLabel('diaper_state', r.diaper_state)}${r.diaper_price ? `(${r.diaper_price})` : ''}${r.diaper_start_date ? ` ${r.diaper_start_date.slice(0,10)}~${r.diaper_end_date ? r.diaper_end_date.slice(0,10) : ''}` : ''}` : '-'}</td>
                       <td><span className={r.status === 'ADMITTED' ? 'badge-green' : 'badge-gray'}>{r.status === 'ADMITTED' ? '입원중' : '퇴원'}</span></td>
@@ -1372,7 +1662,7 @@ export default function PatientManagePage() {
                         ) : '-'}
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             )}
@@ -1469,7 +1759,9 @@ export default function PatientManagePage() {
                           key={cell.id}
                           onClick={() => {
                             const linked = cell.patient_id ? mergedPatients.find(p => p.id === cell.patient_id) : null;
-                            setChargeLoadedFor(''); // 환자 변경 시 금액 데이터 무효화
+                            // 환자 변경 시 비급여 입력칸을 0원 구조체로 즉시 리셋 — 직전 환자 금액 잔상 차단 (input은 그대로 보임)
+                            setChargeLoadedFor('');
+                            setChargeItems(emptyChargeItems());
                             setSelectedCell({
                               ...cell,
                               period_start_date: period.start,
@@ -1492,6 +1784,21 @@ export default function PatientManagePage() {
                           <div className="text-sm font-bold truncate">{cell.patient_name || '빈자리'}</div>
                           <div className="text-[11px] text-slate-600 truncate">{cell.patient_name ? `${cell.gender === 'F' ? '여' : cell.gender === 'M' ? '남' : '-'} · ${toLabel('insurance_type', cell.insurance_type)}${cell.copay_reduction && cell.copay_reduction !== 'NONE' ? `(${toLabel('copay_reduction', cell.copay_reduction)})` : ''} · ${toLabel('patient_group', cell.patient_group)}` : '\u00A0'}</div>
                           {cell.infection_strain && <div className="text-[10px] text-red-600 font-semibold">{cell.infection_strain}</div>}
+                          {cell.patient_name && cell.rehab_type ? (() => {
+                            const days = getOnsetDays(cell.onset_date);
+                            const bucketKey = getOnsetBucketKey(cell.onset_date);
+                            return (
+                              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                <span className={`text-[10px] px-1.5 rounded border font-semibold ${getRehabBadgeClass(cell.rehab_type)}`}>{getRehabTypeLabel(cell.rehab_type)}</span>
+                                {days !== null ? (
+                                  <>
+                                    <span className="text-[10px] text-slate-700 font-semibold">D+{days}</span>
+                                    <span className="text-[10px] text-slate-500">{getOnsetBucketLabel(bucketKey)}</span>
+                                  </>
+                                ) : null}
+                              </div>
+                            );
+                          })() : null}
                           {(cell.status === 'OUTING' || cell.status === 'OVERNIGHT') && <div className="text-[10px] text-indigo-600 font-semibold">{cell.status === 'OUTING' ? '외출' : '외박'}</div>}
                         </button>
                       );
@@ -1630,7 +1937,8 @@ export default function PatientManagePage() {
                 <div className="flex gap-1">
                   <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold">{selectedCell.room_no} {selectedCell.bed_no}번</span>
                   {selectedCell.chart_no && <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-slate-600">{selectedCell.chart_no}</span>}
-                  {selectedCell.gender && <span className="text-[10px] px-2 py-0.5 rounded bg-green-100 text-green-700">{selectedCell.gender === 'F' ? '여' : '남'} · {toLabel('mobility_type', selectedCell.mobility_type)}</span>}
+                  {(selectedCell.gender === 'F' || selectedCell.gender === 'M') && <span className="text-[10px] px-2 py-0.5 rounded bg-green-100 text-green-700">{selectedCell.gender === 'F' ? '여' : '남'} · {toLabel('mobility_type', selectedCell.mobility_type)}</span>}
+                  {selectedCell.gender && selectedCell.gender !== 'F' && selectedCell.gender !== 'M' && <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold">⚠ 성별 미설정</span>}
                   {selectedCell.insurance_type && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-700">{toLabel('insurance_type', selectedCell.insurance_type)}{selectedCell.copay_reduction && selectedCell.copay_reduction !== 'NONE' ? ` (${toLabel('copay_reduction', selectedCell.copay_reduction)})` : ''} · {toLabel('patient_group', selectedCell.patient_group)}</span>}
                   {selectedCell.period_type && <span className="text-[10px] px-2 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold">{selectedCell.period_type === 'PNEUMONIA' ? '폐렴' : '패혈증'}{selectedCell.period_phase === 'START' ? ' (진행중)' : selectedCell.period_phase === 'END' ? ' (종료)' : ''}</span>}
                 </div>
@@ -1641,12 +1949,11 @@ export default function PatientManagePage() {
             <div className="flex border-b border-gray-200 px-5 bg-gray-50" style={{ flexShrink: 0 }}>
               {[
                 { label: '기본정보', icon: '📋', active: 'border-blue-500 text-blue-600' },
-                { label: '간호정보', icon: '🩺', active: 'border-teal-500 text-teal-600' },
-                { label: '비급여', icon: '💰', active: 'border-amber-500 text-amber-600' },
-                { label: '보호자·사업', icon: '📞', active: 'border-purple-500 text-purple-600' },
+                { label: '간호·비급여', icon: '🩺', active: 'border-teal-500 text-teal-600' },
+                { label: '보호자', icon: '📞', active: 'border-purple-500 text-purple-600' },
                 { label: '환자통계', icon: '📊', active: 'border-slate-500 text-slate-600' },
               ].map((tab, i) => (
-                <button key={i} onClick={() => { setCellEditTab(i as any); if (i === 2 && selectedCell?.patient_id && chargeLoadedFor !== selectedCell.patient_id) loadCharges(selectedCell.patient_id, chargeMonth); if (i === 4 && selectedCell?.patient_id) api(`/patients/${selectedCell.patient_id}/events`).then(setPatientEvents).catch(() => {}); }} className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px flex items-center gap-1 ${cellEditTab === i ? tab.active : 'border-transparent text-slate-400 hover:text-slate-600'}`}><span className="text-sm">{tab.icon}</span>{tab.label}</button>
+                <button key={i} onClick={() => { setCellEditTab(i as any); if (i === 3 && selectedCell?.patient_id) api(`/patients/${selectedCell.patient_id}/events`).then(setPatientEvents).catch(() => {}); }} className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px flex items-center gap-1 ${cellEditTab === i ? tab.active : 'border-transparent text-slate-400 hover:text-slate-600'}`}><span className="text-sm">{tab.icon}</span>{tab.label}</button>
               ))}
             </div>
             {/* 탭 내용 */}
@@ -1659,7 +1966,7 @@ export default function PatientManagePage() {
                     <div className="grid grid-cols-4 gap-3">
                       <div><label className="text-[10px] text-slate-500 font-semibold">성명</label><input className="input w-full" value={selectedCell.patient_name} onChange={e => setSelectedCell({ ...selectedCell, patient_name: e.target.value })} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">차트번호</label><input className="input w-full" value={selectedCell.chart_no} onChange={e => setSelectedCell({ ...selectedCell, chart_no: e.target.value, patient_no: e.target.value })} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">성별</label><SelectField value={selectedCell.gender} onChange={v => setSelectedCell({ ...selectedCell, gender: v })} options={[{ v: 'F', l: '여' }, { v: 'M', l: '남' }]} /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">성별</label><SelectField value={selectedCell.gender === 'F' || selectedCell.gender === 'M' ? selectedCell.gender : ''} onChange={v => setSelectedCell({ ...selectedCell, gender: v })} options={[{ v: '', l: '미설정 (선택 필요)' }, { v: 'F', l: '여' }, { v: 'M', l: '남' }]} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">거동상태</label><SelectField value={selectedCell.mobility_type} onChange={v => setSelectedCell({ ...selectedCell, mobility_type: v })} options={[{ v: 'BEDRIDDEN', l: '와상' }, { v: 'AMBULATORY', l: '거동' }]} /></div>
                     </div>
                   </div>
@@ -1667,48 +1974,26 @@ export default function PatientManagePage() {
                     <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />보험 · 분류</p>
                     <div className="grid grid-cols-4 gap-3">
                       <div><label className="text-[10px] text-slate-500 font-semibold">보험유형</label><GroupedSelectField value={selectedCell.insurance_type} onChange={v => setSelectedCell({ ...selectedCell, insurance_type: v })} groups={INSURANCE_GROUPS} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">본인부담경감</label><SelectField value={selectedCell.copay_reduction || 'NONE'} onChange={v => setSelectedCell({ ...selectedCell, copay_reduction: v, ...(v === 'NONE' ? { disease_code_id: null, disease_code_registered_at: null, disease_code_expires_at: null } : {}) })} options={COPAY_REDUCTION_OPTIONS} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">환자분류</label><SelectField value={selectedCell.patient_group} onChange={v => setSelectedCell({ ...selectedCell, patient_group: v })} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} /></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">환자분류</label><SelectField value={selectedCell.patient_group} onChange={v => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        if (v === 'PNEUMONIA' || v === 'SEPSIS') {
+                          setSelectedCell({ ...selectedCell, patient_group: v, period_type: v, period_phase: 'START', period_start_date: today });
+                          return;
+                        }
+                        const activePeriod = selectedCell.period_type && selectedCell.period_phase === 'START';
+                        if (activePeriod) {
+                          const periodLabel = selectedCell.period_type === 'PNEUMONIA' ? '폐렴' : '패혈증';
+                          if (window.confirm(`현재 ${periodLabel} 진행 중입니다. 함께 종료할까요?\n\n확인: 특정기간을 오늘 날짜로 종료\n취소: 환자분류만 변경 (특정기간 유지)`)) {
+                            setSelectedCell({ ...selectedCell, patient_group: v, period_phase: 'END', period_end_date: today });
+                            return;
+                          }
+                        }
+                        setSelectedCell({ ...selectedCell, patient_group: v });
+                      }} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }, { v: 'INFECTION', l: '감염' }, { v: 'PNEUMONIA', l: '폐렴' }, { v: 'SEPSIS', l: '패혈증' }]} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">주상병코드</label><SearchableSelect value={selectedCell.main_disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, main_disease_code_id: v || null })} placeholder="주상병코드 검색..." options={[{ v: '', l: '선택 안함' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === 'MAIN').map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">입원일</label><input type="date" className="input w-full" value={selectedCell.admitted_at || ''} onChange={e => setSelectedCell({ ...selectedCell, admitted_at: e.target.value })} /></div>
                     </div>
-                    {(selectedCell.copay_reduction === 'SEVERE' || selectedCell.copay_reduction === 'RARE') && (
-                      <div className="mt-2 border border-blue-200 rounded-lg p-3 bg-blue-50 grid grid-cols-3 gap-3">
-                        <div><p className="text-[10px] text-blue-600 font-semibold mb-1">V코드 (산정특례)</p><SelectField value={selectedCell.disease_code_id || ''} onChange={v => setSelectedCell({ ...selectedCell, disease_code_id: v || null })} options={[{ v: '', l: 'V코드 선택' }, ...diseaseCodes.filter(c => c.is_active && c.code_type === (selectedCell.copay_reduction === 'SEVERE' ? 'SEVERE' : 'RARE')).map(c => ({ v: c.id, l: `${c.code} ${c.name}` }))]} /></div>
-                        <div><p className="text-[10px] text-blue-600 font-semibold mb-1">등록일</p><input type="date" className="input w-full" value={selectedCell.disease_code_registered_at || ''} onChange={e => { const val = e.target.value; const next: any = { ...selectedCell, disease_code_registered_at: val || null }; if (val && !selectedCell.disease_code_expires_at) { const d = new Date(val + 'T00:00:00'); d.setFullYear(d.getFullYear() + 5); next.disease_code_expires_at = d.toISOString().slice(0, 10); } setSelectedCell(next); }} /></div>
-                        <div><p className="text-[10px] text-blue-600 font-semibold mb-1">만료일</p><input type="date" className="input w-full" value={selectedCell.disease_code_expires_at || ''} onChange={e => setSelectedCell({ ...selectedCell, disease_code_expires_at: e.target.value || null })} /></div>
-                      </div>
-                    )}
                   </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />입원경로</p>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div><label className="text-[10px] text-slate-500 font-semibold">입원전병원</label><input className="input w-full" list="hospital-options" value={selectedCell.prev_hospital} onChange={e => setSelectedCell({ ...selectedCell, prev_hospital: e.target.value })} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">유입경로</label><select className="input w-full" value={selectedCell.referral_source || ''} onChange={e => setSelectedCell({ ...selectedCell, referral_source: e.target.value })}><option value="">선택</option>{['SNS', '인근거주', '장기요양기관', '소개', '진료협력센터', '급성기병원', '재입원', '기타'].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-                      <div className="col-span-2"><label className="text-[10px] text-slate-500 font-semibold">비고</label><input className="input w-full" value={selectedCell.note || ''} onChange={e => setSelectedCell({ ...selectedCell, note: e.target.value })} placeholder="메모" /></div>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />진료비</p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div><label className="text-[10px] text-slate-500 font-semibold">월 진료비</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_medical_fee ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_medical_fee: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">수납액</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_payment ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_payment: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">미수금</label><input type="number" className="input w-full" value={(selectedCell as any).monthly_unpaid ?? ''} onChange={e => setSelectedCell({ ...selectedCell, monthly_unpaid: Number(e.target.value) || 0 } as any)} placeholder="0" /></div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {/* ━━━ 탭1: 간호정보 ━━━ */}
-              {cellEditTab === 1 && (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />특성화 · 감염</p>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div><label className="text-[10px] text-slate-500 font-semibold">특성화</label><div className="flex gap-1 mt-1">{SPECIALIZATION_OPTIONS.map(opt => (<button key={opt.value} type="button" onClick={() => { const cur = new Set<string>(selectedCell.specializations || []); if (cur.has(opt.value)) cur.delete(opt.value); else cur.add(opt.value); setSelectedCell({ ...selectedCell, specializations: Array.from(cur), ...(opt.value === 'INFECT' && !cur.has('INFECT') ? { infection_strain: '' } : {}) }); }} className={`px-2 py-1 text-xs rounded border ${(selectedCell.specializations || []).includes(opt.value) ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-gray-200'}`}>{opt.label}</button>))}</div></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">감염균주</label><SelectField value={selectedCell.infection_strain} onChange={v => setSelectedCell({ ...selectedCell, infection_strain: v })} options={[{ v: '', l: '없음' }, { v: 'CRE', l: 'CRE' }, { v: 'VRE', l: 'VRE' }, { v: 'MR', l: 'MR' }]} disabled={!(selectedCell.specializations || []).includes('INFECT')} /></div>
-                    </div>
-                  </div>
-                  {/* 특정기간 */}
                   <div>
                     <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-500" />특정기간</p>
                     <div className="grid grid-cols-4 gap-3 items-end">
@@ -1722,6 +2007,80 @@ export default function PatientManagePage() {
                       </div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">시작일</label><input type="date" className="input w-full" value={selectedCell.period_start_date || ''} onChange={e => setSelectedCell({ ...selectedCell, period_start_date: e.target.value, period_phase: e.target.value ? 'START' : selectedCell.period_phase })} disabled={!selectedCell.period_type} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">종료일</label><input type="date" className="input w-full" value={selectedCell.period_end_date || ''} onChange={e => setSelectedCell({ ...selectedCell, period_end_date: e.target.value, period_phase: e.target.value ? 'END' : selectedCell.period_phase })} disabled={!selectedCell.period_type} /></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* ━━━ 탭1: 간호·비급여 ━━━ */}
+              {cellEditTab === 1 && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />기저귀 · 간병</p>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div><label className="text-[10px] text-slate-500 font-semibold">기저귀</label><SelectField value={selectedCell.diaper_state || 'NONE'} onChange={v => setSelectedCell({ ...selectedCell, diaper_state: v, ...(v === 'IN_HOUSE' ? {} : { diaper_price: 0 }) })} options={[{ v: 'NONE', l: '미사용' }, { v: 'IN_HOUSE', l: '원내' }, { v: 'PERSONAL', l: '본인' }]} /></div>
+                      {selectedCell.diaper_state === 'IN_HOUSE' && (
+                        <>
+                          <div><label className="text-[10px] text-slate-500 font-semibold">기저귀 금액</label><input type="number" className="input w-full" placeholder="기저귀 금액(원내만)" value={selectedCell.diaper_price ?? ''} onChange={e => setSelectedCell({ ...selectedCell, diaper_price: Number(e.target.value) || 0 })} /></div>
+                          <div><label className="text-[10px] text-slate-500 font-semibold">시작일</label><input type="date" className="input w-full" value={selectedCell.diaper_start_date || ''} onChange={e => setSelectedCell({ ...selectedCell, diaper_start_date: e.target.value || null })} /></div>
+                          <div><label className="text-[10px] text-slate-500 font-semibold">종료일</label><input type="date" className="input w-full" value={selectedCell.diaper_end_date || ''} onChange={e => setSelectedCell({ ...selectedCell, diaper_end_date: e.target.value || null })} /></div>
+                        </>
+                      )}
+                      <div><label className="text-[10px] text-slate-500 font-semibold">간병유형</label><SelectField value={selectedCell.caregiver_type || ''} onChange={v => setSelectedCell({ ...selectedCell, caregiver_type: v })} options={CAREGIVER_OPTIONS} /></div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />특성화 · 감염</p>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div><label className="text-[10px] text-slate-500 font-semibold">특성화</label><div className="flex gap-1 mt-1">{SPECIALIZATION_OPTIONS.map(opt => (<button key={opt.value} type="button" onClick={() => { const cur = new Set<string>(selectedCell.specializations || []); if (cur.has(opt.value)) cur.delete(opt.value); else cur.add(opt.value); setSelectedCell({ ...selectedCell, specializations: Array.from(cur), ...(opt.value === 'INFECT' && !cur.has('INFECT') ? { infection_strain: '' } : {}) }); }} className={`px-2 py-1 text-xs rounded border ${(selectedCell.specializations || []).includes(opt.value) ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-gray-200'}`}>{opt.label}</button>))}</div></div>
+                      <div><label className="text-[10px] text-slate-500 font-semibold">감염균주</label><SelectField value={selectedCell.infection_strain} onChange={v => setSelectedCell({ ...selectedCell, infection_strain: v })} options={[{ v: '', l: '없음' }, { v: 'CRE', l: 'CRE' }, { v: 'VRE', l: 'VRE' }, { v: 'MR', l: 'MR' }]} disabled={!(selectedCell.specializations || []).includes('INFECT')} /></div>
+                    </div>
+                  </div>
+                  {/* 재활구분 / 발병일 (CNS·OS·외래) */}
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />재활구분 / 발병일</p>
+                    <div className="grid grid-cols-4 gap-3 items-end">
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-semibold">재활구분</label>
+                        <SelectField
+                          value={selectedCell.rehab_type || ''}
+                          onChange={v => setSelectedCell({ ...selectedCell, rehab_type: v, ...(v ? {} : { onset_date: null }) })}
+                          options={[{ v: '', l: '해당없음' }, { v: 'CNS', l: 'CNS (뇌신경계)' }, { v: 'OS', l: 'CNS 외 (정형·기타)' }, { v: 'OUTPATIENT', l: '외래' }]}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-semibold">발병일</label>
+                        <input
+                          type="date"
+                          className="input w-full"
+                          value={selectedCell.onset_date || ''}
+                          onChange={e => setSelectedCell({ ...selectedCell, onset_date: e.target.value || null })}
+                          disabled={!selectedCell.rehab_type || selectedCell.rehab_type === 'OUTPATIENT'}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-500 font-semibold">경과 / 분류</label>
+                        {(() => {
+                          const days = getOnsetDays(selectedCell.onset_date);
+                          const bucketKey = getOnsetBucketKey(selectedCell.onset_date);
+                          const badgeClass = getRehabBadgeClass(selectedCell.rehab_type);
+                          return (
+                            <div className="flex items-center gap-2 h-10">
+                              {selectedCell.rehab_type ? (
+                                <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold ${badgeClass}`}>{getRehabTypeLabel(selectedCell.rehab_type)}</span>
+                              ) : null}
+                              {days !== null ? (
+                                <>
+                                  <span className="text-xs text-slate-700 font-semibold">D+{days}</span>
+                                  <span className="text-[11px] text-slate-500">({formatOnsetDuration(days)})</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">{getOnsetBucketLabel(bucketKey)}</span>
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-300">발병일 미입력</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                   {/* 처치 항목 */}
@@ -1761,58 +2120,8 @@ export default function PatientManagePage() {
                   )}
                 </div>
               )}
-              {/* ━━━ 탭2: 급여/비급여 ━━━ */}
+              {/* ━━━ 탭2: 보호자 ━━━ */}
               {cellEditTab === 2 && (
-                <div className="space-y-4">
-                  {/* 기저귀/간병 기본정보 */}
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />기저귀 · 간병</p>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div><label className="text-[10px] text-slate-500 font-semibold">기저귀</label><SelectField value={selectedCell.diaper_state || 'NONE'} onChange={v => setSelectedCell({ ...selectedCell, diaper_state: v, ...(v === 'IN_HOUSE' ? {} : { diaper_price: 0 }) })} options={[{ v: 'NONE', l: '미사용' }, { v: 'IN_HOUSE', l: '원내' }, { v: 'PERSONAL', l: '본인' }]} /></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">간병유형</label><SelectField value={selectedCell.caregiver_type || ''} onChange={v => setSelectedCell({ ...selectedCell, caregiver_type: v })} options={CAREGIVER_OPTIONS} /></div>
-                      <div className="col-span-2" />
-                    </div>
-                  </div>
-                  {/* 월별 금액 입력 */}
-                  {selectedCell.patient_id && (
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <p className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />월별 금액</p>
-                        <input type="month" className="input text-xs h-7" value={chargeMonth} onChange={e => { setChargeMonth(e.target.value); if (selectedCell.patient_id) loadCharges(selectedCell.patient_id, e.target.value); }} />
-                        <button className="btn-primary text-xs py-1" disabled={chargeSaving} onClick={saveCharges}>{chargeSaving ? '저장중...' : '금액 저장'}</button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* 급여 */}
-                        <div>
-                          <p className="text-[10px] font-semibold text-blue-600 mb-1.5 border-b border-blue-100 pb-1">급여 항목</p>
-                          <div className="space-y-1.5">
-                            {chargeItems.filter(c => c.category === 'COVERED').map((item, idx) => (
-                              <div key={item.item_name} className="flex items-center gap-2">
-                                <span className="text-xs text-slate-600 w-24 truncate">{item.item_name}</span>
-                                <input type="number" className="input flex-1 h-7 text-xs" value={item.amount || ''} placeholder="0" onChange={e => { const next = [...chargeItems]; const ci = next.findIndex(c => c.category === 'COVERED' && c.item_name === item.item_name); if (ci >= 0) next[ci] = { ...next[ci], amount: Number(e.target.value) || 0 }; setChargeItems(next); }} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        {/* 비급여 */}
-                        <div>
-                          <p className="text-[10px] font-semibold text-amber-600 mb-1.5 border-b border-amber-100 pb-1">비급여 항목</p>
-                          <div className="space-y-1.5">
-                            {chargeItems.filter(c => c.category === 'NON_COVERED').map((item, idx) => (
-                              <div key={item.item_name} className="flex items-center gap-2">
-                                <span className="text-xs text-slate-600 w-24 truncate">{item.item_name}</span>
-                                <input type="number" className="input flex-1 h-7 text-xs" value={item.amount || ''} placeholder="0" onChange={e => { const next = [...chargeItems]; const ci = next.findIndex(c => c.category === 'NON_COVERED' && c.item_name === item.item_name); if (ci >= 0) next[ci] = { ...next[ci], amount: Number(e.target.value) || 0 }; setChargeItems(next); }} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* ━━━ 탭3: 보호자·사업 ━━━ */}
-              {cellEditTab === 3 && (
                 <div className="space-y-4">
                   <div>
                     <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />보호자 · 연락처</p>
@@ -1845,19 +2154,13 @@ export default function PatientManagePage() {
                     <div className="grid grid-cols-4 gap-3 mt-3">
                       <div><label className="text-[10px] text-slate-500 font-semibold">병원비 문자번호</label><input className="input w-full" value={selectedCell.billing_sms_phone || ''} onChange={e => setSelectedCell({ ...selectedCell, billing_sms_phone: e.target.value })} /></div>
                       <div><label className="text-[10px] text-slate-500 font-semibold">지인</label><div className="flex gap-1"><input className="input flex-1" value={selectedCell.acquaintance} onChange={e => setSelectedCell({ ...selectedCell, acquaintance: e.target.value })} /><input type="color" className="w-8 h-8 rounded cursor-pointer" value={selectedCell.acquaintance_color || '#0ea5e9'} onChange={e => setSelectedCell({ ...selectedCell, acquaintance_color: e.target.value })} /></div></div>
-                      <div><label className="text-[10px] text-slate-500 font-semibold">거주지</label><input className="input w-full" value={selectedCell.address || ''} onChange={e => setSelectedCell({ ...selectedCell, address: e.target.value })} placeholder="거주지" /></div>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-500 mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />사업 정보</p>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div className="col-span-2"><label className="text-[10px] text-slate-500 font-semibold">지역</label><input className="input w-full" value={selectedCell.project_region || ''} onChange={e => setSelectedCell({ ...selectedCell, project_region: e.target.value })} placeholder="사업 지역" /></div>
+                      <div className="col-span-2"><label className="text-[10px] text-slate-500 font-semibold">비고</label><input className="input w-full" value={selectedCell.note || ''} onChange={e => setSelectedCell({ ...selectedCell, note: e.target.value })} placeholder="메모" /></div>
                     </div>
                   </div>
                 </div>
               )}
-              {/* ━━━ 탭4: 환자통계 ━━━ */}
-              {cellEditTab === 4 && (
+              {/* ━━━ 탭3: 환자통계 ━━━ */}
+              {cellEditTab === 3 && (
                 <div className="space-y-5">
                   {/* 요약 카드 */}
                   <div className="grid grid-cols-3 gap-3">
@@ -1902,15 +2205,20 @@ export default function PatientManagePage() {
                       <table className="w-full text-xs">
                         <tbody>
                           {(() => {
-                            const diaperPrice = Number(selectedCell.diaper_price ?? 0);
-                            const caregiverPrice = Number(selectedCell.caregiver_price ?? 0);
+                            // patient_charges 단일 진실 출처. 환자관리·수납관리에서 입력한 월별 비급여 직접 표시.
+                            // 기존 cell.diaper_price/caregiver_price 컬럼은 미사용.
+                            const cur = (selectedCell as any).current_charges;
+                            const diaperPrice = Number(cur?.diaper ?? 0);
+                            const caregiverPrice = Number(cur?.caregiver ?? 0);
+                            const monthLabel = cur?.charge_month ?? '';
                             const stayDays = selectedCell.admitted_at ? Math.max(1, Math.ceil((Date.now() - new Date(selectedCell.admitted_at).getTime()) / 86400000)) : 0;
                             const stayMonths = Math.max(1, Math.ceil(stayDays / 30));
                             const diaperTotal = diaperPrice * stayMonths;
                             const caregiverTotal = caregiverPrice * stayMonths;
+                            const monthSuffix = monthLabel ? ` ${monthLabel}` : '';
                             return [
-                              ['기저귀 (월)', diaperPrice ? `₩${diaperPrice.toLocaleString()}` : '-'],
-                              ['간병 (월)', caregiverPrice ? `₩${caregiverPrice.toLocaleString()}` : '-'],
+                              [`기저귀 (월)${monthSuffix}`, diaperPrice ? `₩${diaperPrice.toLocaleString()}` : '-'],
+                              [`간병 (월)${monthSuffix}`, caregiverPrice ? `₩${caregiverPrice.toLocaleString()}` : '-'],
                               ['기저귀 누적', diaperPrice ? `₩${diaperTotal.toLocaleString()} (${stayMonths}개월)` : '-'],
                               ['간병 누적', caregiverPrice ? `₩${caregiverTotal.toLocaleString()} (${stayMonths}개월)` : '-'],
                               ['비급여 합계', (diaperPrice || caregiverPrice) ? `₩${(diaperTotal + caregiverTotal).toLocaleString()}` : '-'],
@@ -2004,8 +2312,8 @@ export default function PatientManagePage() {
               </div>
               <div className="flex gap-2">
                 <button className="btn-secondary" onClick={() => setSelectedCell(null)}>취소</button>
-                {!selectedCell.patient_id && <button className="btn-primary" onClick={admitFromBoard}>입원 등록</button>}
-                <button className="btn-primary" disabled={savingCell} onClick={saveCell}>{savingCell ? '저장 중...' : '저장'}</button>
+                {!selectedCell.patient_id && <button className="btn-primary" disabled={admitLoading} onClick={admitFromBoard}>{admitLoading ? '처리 중...' : '입원 등록'}</button>}
+                <button className="btn-primary" disabled={savingCell || admitLoading} onClick={saveCell}>{(savingCell || admitLoading) ? '저장 중...' : '저장'}</button>
               </div>
             </div>
           </div>
@@ -2223,7 +2531,22 @@ export default function PatientManagePage() {
               <SelectField value={listAdmitForm.mobility_type} onChange={v => setListAdmitForm(p => ({ ...p, mobility_type: v }))} options={[{ v: 'BEDRIDDEN', l: '와상' }, { v: 'AMBULATORY', l: '거동' }]} />
               <GroupedSelectField value={listAdmitForm.insurance_type} onChange={v => setListAdmitForm(p => ({ ...p, insurance_type: v }))} groups={INSURANCE_GROUPS} />
               <SelectField value={listAdmitForm.copay_reduction || 'NONE'} onChange={v => setListAdmitForm(p => ({ ...p, copay_reduction: v, ...(v === 'NONE' ? { disease_code_id: '', disease_code_registered_at: '', disease_code_expires_at: '' } : {}) }))} options={COPAY_REDUCTION_OPTIONS} />
-              <SelectField value={listAdmitForm.patient_group} onChange={v => setListAdmitForm(p => ({ ...p, patient_group: v }))} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }]} />
+              <SelectField value={listAdmitForm.patient_group} onChange={v => {
+                const today = new Date().toISOString().slice(0, 10);
+                if (v === 'PNEUMONIA' || v === 'SEPSIS') {
+                  setListAdmitForm(p => ({ ...p, patient_group: v, period_type: v, period_phase: 'START', period_start_date: today }));
+                  return;
+                }
+                const activePeriod = listAdmitForm.period_type && listAdmitForm.period_phase === 'START';
+                if (activePeriod) {
+                  const periodLabel = listAdmitForm.period_type === 'PNEUMONIA' ? '폐렴' : '패혈증';
+                  if (window.confirm(`현재 ${periodLabel} 진행 중입니다. 함께 종료할까요?\n\n확인: 특정기간을 오늘 날짜로 종료\n취소: 환자분류만 변경 (특정기간 유지)`)) {
+                    setListAdmitForm(p => ({ ...p, patient_group: v, period_phase: 'END', period_end_date: today }));
+                    return;
+                  }
+                }
+                setListAdmitForm(p => ({ ...p, patient_group: v }));
+              }} options={[{ v: 'HIGHEST', l: '최고도' }, { v: 'HIGH', l: '고도' }, { v: 'MEDIUM', l: '중도' }, { v: 'LOW', l: '경도' }, { v: 'SELECT', l: '선택' }, { v: 'UNRATED', l: '미평가' }, { v: 'INFECTION', l: '감염' }, { v: 'PNEUMONIA', l: '폐렴' }, { v: 'SEPSIS', l: '패혈증' }]} />
               <SearchableSelect
                 value={listAdmitForm.main_disease_code_id}
                 onChange={v => setListAdmitForm(p => ({ ...p, main_disease_code_id: v }))}
@@ -2321,6 +2644,20 @@ export default function PatientManagePage() {
                 <option value="">유입경로 선택</option>
                 {['SNS', '인근거주', '장기요양기관', '소개', '진료협력센터', '급성기병원', '재입원', '기타'].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
+              <SelectField
+                value={listAdmitForm.rehab_type}
+                onChange={v => setListAdmitForm(p => ({ ...p, rehab_type: v, ...(v ? {} : { onset_date: '' }) }))}
+                options={[{ v: '', l: '재활구분 없음' }, { v: 'CNS', l: 'CNS (뇌신경계)' }, { v: 'OS', l: 'CNS 외 (정형·기타)' }, { v: 'OUTPATIENT', l: '외래' }]}
+              />
+              <input
+                type="date"
+                className="input"
+                placeholder="발병일"
+                value={listAdmitForm.onset_date || ''}
+                onChange={e => setListAdmitForm(p => ({ ...p, onset_date: e.target.value }))}
+                disabled={!listAdmitForm.rehab_type || listAdmitForm.rehab_type === 'OUTPATIENT'}
+                title="발병일 (CNS/OS 환자)"
+              />
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setListAdmitOpen(false)}>취소</button>
@@ -2639,6 +2976,120 @@ export default function PatientManagePage() {
                     <button onClick={closeBulkModal} className="btn-primary">닫기</button>
                   </div>
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 엑셀 최신화 모달 */}
+      {syncModalOpen && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) { setSyncModalOpen(false); } }}>
+          <div className="modal w-full max-w-lg">
+            <div className="modal-header">
+              <h2 className="modal-title">엑셀로 최신화</h2>
+              <button className="text-xl text-slate-400" onClick={() => setSyncModalOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body space-y-4">
+              {!syncResult ? (
+                <>
+                  <p className="text-sm text-slate-600">아래 3종 파일 중 해당 파일을 동시에 선택하세요. 종류는 자동으로 인식합니다.</p>
+                  <ul className="text-xs text-slate-500 list-disc list-inside space-y-0.5">
+                    <li>원무과약정금.xlsx — 환자 기본정보·보험유형·기저귀</li>
+                    <li>일일병실현황.xlsx — 병실배정 (해당 날짜 덮어씀)</li>
+                    <li>환자현황.xlsx — 재활구분·발병일</li>
+                  </ul>
+
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                    <span className="text-3xl mb-2">📂</span>
+                    <span className="text-sm font-medium text-slate-700">파일 선택 (최대 3개)</span>
+                    <span className="text-xs text-slate-400 mt-1">.xlsx 파일만 지원</span>
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      multiple
+                      className="hidden"
+                      onChange={e => {
+                        const list = Array.from(e.target.files ?? []).slice(0, 3);
+                        setSyncFiles(list);
+                        e.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+
+                  {syncFiles.length > 0 && (
+                    <div className="space-y-1">
+                      {syncFiles.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                          <span className="text-green-600">✓</span>
+                          <span className="truncate">{f.name}</span>
+                          <span className="text-slate-400 ml-auto shrink-0">({(f.size / 1024).toFixed(0)} KB)</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="modal-footer">
+                    <button onClick={() => setSyncModalOpen(false)} className="btn-secondary">취소</button>
+                    <button onClick={runSyncExcel} disabled={syncLoading || syncFiles.length === 0} className="btn-primary">
+                      {syncLoading ? '처리 중...' : `최신화 실행 (${syncFiles.length}개 파일)`}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {syncResult.wonmu && (
+                      <div className="p-3 bg-green-50 rounded-lg">
+                        <p className="text-sm font-semibold text-green-800 mb-1">원무과약정금 (환자정보)</p>
+                        <div className="flex gap-4 text-xs text-green-700">
+                          <span>신규 {syncResult.wonmu.added}명</span>
+                          <span>업데이트 {syncResult.wonmu.updated}명</span>
+                          <span>퇴원처리 {syncResult.wonmu.discharged}명</span>
+                        </div>
+                        {syncResult.wonmu.errors?.length > 0 && (
+                          <div className="mt-1 text-xs text-red-600 space-y-0.5">
+                            {syncResult.wonmu.errors.slice(0, 5).map((e: string, i: number) => <div key={i}>{e}</div>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {syncResult.board && (
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-sm font-semibold text-blue-800 mb-1">일일병실현황 ({syncResult.board.date})</p>
+                        <p className="text-xs text-blue-700">병상 {syncResult.board.updated}건 업데이트</p>
+                        {syncResult.board.errors?.length > 0 && (
+                          <div className="mt-1 text-xs text-red-600 space-y-0.5">
+                            {syncResult.board.errors.slice(0, 5).map((e: string, i: number) => <div key={i}>{e}</div>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {syncResult.rehab && (
+                      <div className="p-3 bg-purple-50 rounded-lg">
+                        <p className="text-sm font-semibold text-purple-800 mb-1">재활현황</p>
+                        <p className="text-xs text-purple-700">재활정보 {syncResult.rehab.updated}건 업데이트</p>
+                        {syncResult.rehab.errors?.length > 0 && (
+                          <div className="mt-1 text-xs text-red-600 space-y-0.5">
+                            {syncResult.rehab.errors.slice(0, 5).map((e: string, i: number) => <div key={i}>{e}</div>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {syncResult.errors?.length > 0 && (
+                      <div className="p-3 bg-red-50 rounded-lg">
+                        <p className="text-sm font-semibold text-red-700 mb-1">파일 처리 오류</p>
+                        {syncResult.errors.map((e: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600">{e}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="modal-footer">
+                    <button onClick={() => { setSyncResult(null); setSyncFiles([]); }} className="btn-secondary">다시 실행</button>
+                    <button onClick={() => setSyncModalOpen(false)} className="btn-primary">닫기</button>
+                  </div>
+                </>
               )}
             </div>
           </div>

@@ -17,6 +17,7 @@ function formatUnit(u: any) {
     item_id: u.item_id,
     item_name: u.item?.name ?? '',
     item_code: u.item?.item_code ?? '',
+    category: u.item?.category ?? '',
     department_id: u.department_id,
     department_name: u.department?.name ?? '',
     stock_out_id: u.stock_out_id,
@@ -30,7 +31,7 @@ function formatUnit(u: any) {
 }
 
 const UNIT_INCLUDE = {
-  item: { select: { name: true, item_code: true } },
+  item: { select: { name: true, item_code: true, category: true } },
   department: { select: { name: true } },
 };
 
@@ -61,7 +62,7 @@ router.get('/', requirePermission('PURCHASE_MANAGE'), async (_req, res) => {
 
 // ─── GET /repairs/list — 관리과용 수리 요청 전체 목록 ────────────
 // ⚠ /:id 보다 먼저 정의해야 /repairs/list 가 /:id에 먹히지 않음
-router.get('/repairs/list', async (req: AuthRequest, res) => {
+router.get('/repairs/list', requirePermission('PURCHASE_MANAGE', 'SYSTEM_ADMIN'), async (req: AuthRequest, res) => {
   try {
     const { status } = req.query;
     const where: any = {};
@@ -79,7 +80,7 @@ router.get('/repairs/list', async (req: AuthRequest, res) => {
 });
 
 // ─── PUT /repairs/:repairId — 수리 처리 (관리과) ────────────────
-router.put('/repairs/:repairId', async (req: AuthRequest, res) => {
+router.put('/repairs/:repairId', requirePermission('PURCHASE_MANAGE', 'SYSTEM_ADMIN'), async (req: AuthRequest, res) => {
   try {
     const { status, result_note } = req.body;
     if (!['IN_PROGRESS', 'COMPLETED', 'DISPOSED'].includes(status)) {
@@ -166,6 +167,13 @@ router.get('/:id', async (req: AuthRequest, res) => {
       },
     });
     if (!unit) return res.status(404).json({ error: '비품을 찾을 수 없습니다.' });
+
+    // 자기 부서 비품 또는 관리자만 조회 가능
+    const canViewAll = req.user!.permissions.includes('SYSTEM_ADMIN') || req.user!.permissions.includes('PURCHASE_MANAGE');
+    if (!canViewAll && unit.department_id !== req.user!.department_id) {
+      return res.status(403).json({ error: '다른 부서의 비품은 조회할 수 없습니다.' });
+    }
+
     res.json({ ...formatUnit(unit), repairs: unit.repairs });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -283,8 +291,19 @@ router.post('/:id/repair', async (req: AuthRequest, res) => {
 });
 
 // ─── GET /:id/repairs — 수리 이력 ───────────────────────────────
-router.get('/:id/repairs', async (req, res) => {
+router.get('/:id/repairs', async (req: AuthRequest, res) => {
   try {
+    const unit = await (prisma as any).equipmentUnit.findUnique({
+      where: { id: req.params.id },
+      select: { department_id: true },
+    });
+    if (!unit) return res.status(404).json({ error: '비품을 찾을 수 없습니다.' });
+
+    const canViewAll = req.user!.permissions.includes('SYSTEM_ADMIN') || req.user!.permissions.includes('PURCHASE_MANAGE');
+    if (!canViewAll && unit.department_id !== req.user!.department_id) {
+      return res.status(403).json({ error: '다른 부서의 비품 수리이력은 조회할 수 없습니다.' });
+    }
+
     const repairs = await (prisma as any).equipmentRepair.findMany({
       where: { equipment_unit_id: req.params.id },
       orderBy: { created_at: 'desc' },

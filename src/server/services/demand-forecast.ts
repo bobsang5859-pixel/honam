@@ -4,12 +4,16 @@
  * 부서+품목별 일일 소모량, 재고 소진 예상일, 발주 필요 시점 계산
  */
 import { prisma } from '../index';
+import { ceilToPurchaseQty, normalizePackSize } from '../../shared/units';
 
 export interface ForecastItem {
   item_id: string;
   item_name: string;
   item_code: string;
   uom: string;
+  purchase_uom: string;
+  issue_uom: string;
+  pack_size: number;
   department_id: string;
   department_name: string;
   /** 1인 1일 평균 사용량 (최근 N개월 기준) */
@@ -30,8 +34,10 @@ export interface ForecastItem {
   needs_reorder: boolean;
   /** 발주 권장일 */
   reorder_by_date: string | null;
-  /** 권장 발주 수량 (리드타임+안전일수 커버) */
+  /** 권장 발주 수량 (리드타임+안전일수 커버, issue_uom 기준 — 호환용) */
   recommended_order_qty: number;
+  /** 권장 발주 수량 (purchase_uom 기준, pack_size 환산 후 올림) */
+  recommended_order_purchase_qty: number;
   /** 기본 업체명 */
   vendor_name: string | null;
   /** 위험도: critical(3일이내) / warning(7일이내) / safe */
@@ -85,34 +91,39 @@ async function calcPatientDays(
 }
 
 /**
- * 부서+품목별 사용량 합산 (최근 N개월, usage_records raw SQL)
+ * 부서+품목별 사용량 합산 (최근 N개월).
+ * 데이터 소스: StockOut(부서로 출고된 양) — 사용 등록 폐지 후의 사실 데이터.
+ * REVERSED 또는 deleted_at != null 인 출고는 제외.
  */
 async function getUsageTotals(
-  startDateStr: string,
-  endDateStr: string,
+  startDate: Date,
+  endDate: Date,
   deptId?: string
 ): Promise<Array<{ department_id: string; item_id: string; total_qty: number }>> {
-  let sql = `
-    SELECT department_id, item_id, SUM(used_qty) as total_qty
-    FROM usage_records
-    WHERE deleted_at IS NULL
-      AND used_at >= ? AND used_at <= ?
-  `;
-  const params: any[] = [startDateStr, endDateStr];
+  const stockOuts = await prisma.stockOut.findMany({
+    where: {
+      deleted_at: null,
+      status: { not: 'REVERSED' },
+      issued_at: { gte: startDate, lte: endDate },
+      ...(deptId ? { department_id: deptId } : {}),
+    },
+    select: {
+      department_id: true,
+      items: { select: { item_id: true, issued_qty: true } },
+    },
+  });
 
-  if (deptId) {
-    sql += ` AND department_id = ?`;
-    params.push(deptId);
+  const totals = new Map<string, number>(); // key: `${dept_id}::${item_id}` → qty
+  for (const so of stockOuts) {
+    for (const it of so.items) {
+      const k = `${so.department_id}::${it.item_id}`;
+      totals.set(k, (totals.get(k) ?? 0) + Number(it.issued_qty));
+    }
   }
-
-  sql += ` GROUP BY department_id, item_id`;
-
-  const rows = await (prisma as any).$queryRawUnsafe(sql, ...params);
-  return rows.map((r: any) => ({
-    department_id: r.department_id,
-    item_id: r.item_id,
-    total_qty: Number(r.total_qty),
-  }));
+  return Array.from(totals.entries()).map(([key, qty]) => {
+    const [department_id, item_id] = key.split('::');
+    return { department_id, item_id, total_qty: qty };
+  });
 }
 
 /**
@@ -133,11 +144,8 @@ export async function forecastDemand(options: {
   startDate.setHours(0, 0, 0, 0);
   const endDate = new Date(now);
 
-  const startDateStr = startDate.toISOString().slice(0, 10);
-  const endDateStr = endDate.toISOString().slice(0, 10);
-
   // 1. 사용량 집계
-  const usageTotals = await getUsageTotals(startDateStr, endDateStr, dept_id);
+  const usageTotals = await getUsageTotals(startDate, endDate, dept_id);
 
   if (item_id) {
     // 특정 품목만 필터
@@ -174,10 +182,11 @@ export async function forecastDemand(options: {
     where: { id: { in: itemIds }, deleted_at: null },
     select: {
       id: true, name: true, item_code: true, uom: true,
+      purchase_uom: true, issue_uom: true, pack_size: true,
       default_vendor_id: true,
-    },
+    } as any,
   });
-  const itemMap = new Map(items.map(i => [i.id, i]));
+  const itemMap = new Map(items.map((i: any) => [i.id, i]));
 
   // 5. 업체 리드타임
   const vendorIds = items.map(i => i.default_vendor_id).filter(Boolean) as string[];
@@ -260,10 +269,12 @@ export async function forecastDemand(options: {
       reorderByDate = reorderDate.toISOString().slice(0, 10);
     }
 
-    // 권장 발주 수량 (리드타임+안전일수 동안의 소모량)
+    // 권장 발주 수량 — issue_uom(개) 기준으로 산출 후 purchase_uom(박스)로 올림 환산
     const recommendedOrderQty = dailyDemand > 0
       ? Math.ceil(dailyDemand * (leadTimeDays + safety_days + 7))
       : 0;
+    const itemPackSize = normalizePackSize((item as any).pack_size ?? 1);
+    const recommendedOrderPurchaseQty = ceilToPurchaseQty(recommendedOrderQty, itemPackSize);
 
     // 위험도
     let riskLevel: ForecastItem['risk_level'] = 'safe';
@@ -283,6 +294,9 @@ export async function forecastDemand(options: {
       item_name: item.name,
       item_code: item.item_code,
       uom: item.uom,
+      purchase_uom: (item as any).purchase_uom ?? item.uom,
+      issue_uom: (item as any).issue_uom ?? item.uom,
+      pack_size: itemPackSize,
       department_id: usage.department_id,
       department_name: deptName,
       daily_rate_per_patient: Math.round(dailyRatePerPatient * 100) / 100,
@@ -295,6 +309,7 @@ export async function forecastDemand(options: {
       needs_reorder: needsReorder,
       reorder_by_date: reorderByDate,
       recommended_order_qty: recommendedOrderQty,
+      recommended_order_purchase_qty: recommendedOrderPurchaseQty,
       vendor_name: vendor?.name || null,
       risk_level: riskLevel,
       data_days: dataDays,
@@ -335,23 +350,21 @@ export async function getUsageHistory(
     const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
     const monthLabel = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
 
-    const startStr = start.toISOString().slice(0, 10);
-    const endStr = end.toISOString().slice(0, 10);
-
-    let sql = `
-      SELECT COALESCE(SUM(used_qty), 0) as total_qty
-      FROM usage_records
-      WHERE deleted_at IS NULL AND item_id = ? AND used_at >= ? AND used_at <= ?
-    `;
-    const params: any[] = [itemId, startStr, endStr];
-
-    if (deptId) {
-      sql += ` AND department_id = ?`;
-      params.push(deptId);
-    }
-
-    const rows: any[] = await (prisma as any).$queryRawUnsafe(sql, ...params);
-    const totalQty = Number(rows[0]?.total_qty || 0);
+    // StockOut(부서 출고) 기반 합산 — REVERSED/삭제 제외
+    const stockOuts = await prisma.stockOut.findMany({
+      where: {
+        deleted_at: null,
+        status: { not: 'REVERSED' },
+        issued_at: { gte: start, lte: end },
+        ...(deptId ? { department_id: deptId } : {}),
+        items: { some: { item_id: itemId } },
+      },
+      select: { items: { where: { item_id: itemId }, select: { issued_qty: true } } },
+    });
+    const totalQty = stockOuts.reduce(
+      (s, so) => s + so.items.reduce((s2, it) => s2 + Number(it.issued_qty), 0),
+      0,
+    );
 
     // 환자일수 (해당 부서 또는 전체)
     let patientDays = 0;

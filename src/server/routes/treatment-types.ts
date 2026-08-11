@@ -19,7 +19,7 @@ router.get('/', async (_req: Request, res: Response) => {
     orderBy: { code: 'asc' },
     include: {
       supply_maps: {
-        include: { item: { select: { id: true, name: true, uom: true } } },
+        include: { item: { select: { id: true, name: true, uom: true, purchase_uom: true, issue_uom: true, pack_size: true } } },
       },
       _count: { select: { patient_treatments: true } },
     },
@@ -33,7 +33,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     where: { id: req.params.id as string },
     include: {
       supply_maps: {
-        include: { item: { select: { id: true, name: true, uom: true, item_code: true } } },
+        include: { item: { select: { id: true, name: true, uom: true, purchase_uom: true, issue_uom: true, pack_size: true, item_code: true } } },
       },
       _count: { select: { patient_treatments: true } },
     },

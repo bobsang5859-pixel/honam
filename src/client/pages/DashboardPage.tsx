@@ -22,7 +22,7 @@ const isSameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a
 const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 const INS_LABEL: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여1종', MEDICAL_2: '의료급여2종', WORKERS_COMP: '산재', AUTO_INS: '자동차' };
-const GRP_LABEL: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가' };
+const GRP_LABEL: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가', INFECTION: '감염', PNEUMONIA: '폐렴', SEPSIS: '패혈증' };
 
 export default function DashboardPage() {
   const { user, hasPerm } = useAuth();

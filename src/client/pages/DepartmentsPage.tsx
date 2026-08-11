@@ -8,10 +8,6 @@ type DepartmentRow = {
   isChild: boolean;
 };
 
-const MODULE_LABELS: Record<string, string> = {
-  'chongmu-module':    '총무',
-};
-
 function sortByKoName(a: { name: string }, b: { name: string }) {
   return a.name.localeCompare(b.name, 'ko');
 }
@@ -52,7 +48,7 @@ export default function DepartmentsPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
   const [editing, setEditing] = useState<Department | null>(null);
-  const [form, setForm] = useState({ name: '', parent_id: '', module_id: '' });
+  const [form, setForm] = useState({ name: '', parent_id: '' });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -69,13 +65,13 @@ export default function DepartmentsPage() {
   };
 
   const openCreate = () => {
-    setForm({ name: '', parent_id: '', module_id: '' });
+    setForm({ name: '', parent_id: '' });
     setEditing(null);
     setModal('create');
   };
 
   const openEdit = (d: Department) => {
-    setForm({ name: d.name, parent_id: d.parent_id || '', module_id: (d as any).module_id || '' });
+    setForm({ name: d.name, parent_id: d.parent_id || '' });
     setEditing(d);
     setModal('edit');
   };
@@ -87,7 +83,7 @@ export default function DepartmentsPage() {
     }
     setSubmitting(true);
     try {
-      const payload = { name: form.name.trim(), parent_id: form.parent_id || null, module_id: form.module_id || null };
+      const payload = { name: form.name.trim(), parent_id: form.parent_id || null };
       if (editing) {
         await api(`/departments/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) });
         showMsg('ok', '수정되었습니다.');
@@ -161,7 +157,6 @@ export default function DepartmentsPage() {
               <tr>
                 <th>부서명</th>
                 <th>소속(그룹)</th>
-                <th>모듈</th>
                 <th>상태</th>
                 <th></th>
               </tr>
@@ -174,9 +169,6 @@ export default function DepartmentsPage() {
                     {dept.name}
                   </td>
                   <td className="text-xs text-gray-500">{parentName}</td>
-                  <td className="text-xs text-gray-500">
-                    {(dept as any).module_id ? MODULE_LABELS[(dept as any).module_id] ?? (dept as any).module_id : <span className="text-gray-300">-</span>}
-                  </td>
                   <td>
                     <span className={dept.is_active ? 'badge-green' : 'badge-gray'}>
                       {dept.is_active ? '활성' : '비활성'}
@@ -225,18 +217,6 @@ export default function DepartmentsPage() {
                   {parentOptions.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">사용 모듈</label>
-                <select
-                  value={form.module_id}
-                  onChange={(e) => setForm((f) => ({ ...f, module_id: e.target.value }))}
-                  className="input"
-                >
-                  <option value="">없음 (물품신청만)</option>
-                  <option value="chongmu-module">총무</option>
-                  <option value="management">관리</option>
                 </select>
               </div>
             </div>

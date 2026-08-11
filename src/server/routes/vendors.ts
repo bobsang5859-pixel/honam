@@ -19,10 +19,24 @@ router.get('/', async (req, res) => {
 
 router.post('/', requirePermission('BASIC_MANAGE'), async (req: AuthRequest, res) => {
   const { code, name, phone, email, lead_time_days } = req.body;
-  if (!code || !name) return res.status(400).json({ error: '코드와 이름은 필수입니다.' });
+  if (!name) return res.status(400).json({ error: '업체명은 필수입니다.' });
   try {
+    // 업체코드 자동 채번 — 미입력 시 V-#### 다음 일련번호(4자리)
+    let finalCode = String(code ?? '').trim();
+    if (!finalCode) {
+      const rows = await prisma.vendor.findMany({
+        where: { code: { startsWith: 'V-' } },
+        select: { code: true },
+      });
+      let maxN = 0;
+      for (const r of rows) {
+        const m = /-(\d+)$/.exec(r.code);
+        if (m) maxN = Math.max(maxN, Number(m[1]));
+      }
+      finalCode = `V-${String(maxN + 1).padStart(4, '0')}`;
+    }
     const vendor = await prisma.vendor.create({
-      data: { id: uuidv4(), code, name, phone: phone ?? '', email: email ?? '', lead_time_days: lead_time_days ?? 3 },
+      data: { id: uuidv4(), code: finalCode, name, phone: phone ?? '', email: email ?? '', lead_time_days: lead_time_days ?? 3 },
     });
     await audit({ actor_user_id: req.user!.id, action: 'CREATE', entity_type: 'vendors', entity_id: vendor.id, after: vendor });
     res.status(201).json(vendor);

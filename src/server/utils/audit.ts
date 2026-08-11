@@ -49,13 +49,23 @@ export function generateNo(prefix: string, seq: number): string {
   return `${prefix}-${ym}-${String(seq).padStart(5, '0')}`;
 }
 
-/** 테이블별 번호 컬럼 매핑 (허용 목록 — SQL injection 방지) */
-const SEQ_COLUMNS: Record<string, string> = {
-  WardRequest: 'request_no',
-  PurchaseOrder: 'po_no',
-  GoodsReceipt: 'gr_no',
-  StockOut: 'so_no',
-  EquipmentUnit: 'serial_no',
+/** 테이블별 번호 컬럼 매핑 (허용 목록 — SQL injection 방지)
+ *  키는 실제 DB 테이블명(snake_case). PascalCase Prisma 모델명도 fallback으로 매핑. */
+const SEQ_COLUMNS: Record<string, { col: string; table: string }> = {
+  // snake_case (실제 호출 형태)
+  ward_requests:      { col: 'request_no',  table: 'ward_requests' },
+  purchase_orders:    { col: 'po_no',       table: 'purchase_orders' },
+  goods_receipts:     { col: 'gr_no',       table: 'goods_receipts' },
+  stock_out:          { col: 'so_no',       table: 'stock_out' },
+  equipment_units:    { col: 'serial_no',   table: 'equipment_units' },
+  purchase_decisions: { col: 'decision_no', table: 'purchase_decisions' },
+  proposal_documents: { col: 'document_no', table: 'proposal_documents' },
+  // PascalCase (구버전 호출 호환)
+  WardRequest:      { col: 'request_no', table: 'ward_requests' },
+  PurchaseOrder:    { col: 'po_no',      table: 'purchase_orders' },
+  GoodsReceipt:     { col: 'gr_no',      table: 'goods_receipts' },
+  StockOut:         { col: 'so_no',      table: 'stock_out' },
+  EquipmentUnit:    { col: 'serial_no',  table: 'equipment_units' },
 };
 
 /**
@@ -64,12 +74,12 @@ const SEQ_COLUMNS: Record<string, string> = {
  * 마지막 '-' 이후 숫자 부분의 MAX + 1을 반환
  */
 export async function nextSeq(table: string): Promise<number> {
-  const col = SEQ_COLUMNS[table];
-  if (!col) throw new Error(`nextSeq: 지원하지 않는 테이블 "${table}"`);
+  const entry = SEQ_COLUMNS[table];
+  if (!entry) throw new Error(`nextSeq: 지원하지 않는 테이블 "${table}"`);
   const prisma = getPrisma();
   // SUBSTR: 마지막 5자리 (NNNNN 부분)를 숫자로 변환하여 MAX 조회
   const result = await (prisma as any).$queryRawUnsafe(
-    `SELECT MAX(CAST(SUBSTR("${col}", LENGTH("${col}") - 4) AS INTEGER)) as max_seq FROM "${table}" WHERE "${col}" IS NOT NULL`
+    `SELECT MAX(CAST(SUBSTR("${entry.col}", LENGTH("${entry.col}") - 4) AS INTEGER)) as max_seq FROM "${entry.table}" WHERE "${entry.col}" IS NOT NULL`
   ) as any[];
   return Number(result[0]?.max_seq ?? 0) + 1;
 }

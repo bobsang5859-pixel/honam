@@ -62,7 +62,7 @@ function simpleTable(headers: string[], rows: string[][]) {
 
 /* ── 라벨 맵 ── */
 
-const patientGroupLabel: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가' };
+const patientGroupLabel: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가', INFECTION: '감염', PNEUMONIA: '폐렴', SEPSIS: '패혈증' };
 const insuranceLabel: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여1종', MEDICAL_2: '의료급여2종', WORKERS_COMP: '산재보험', AUTO_INS: '자동차보험' };
 const caregiverLabel: Record<string, string> = { CLOSE: '밀착간병', OUTSOURCED: '외주간병', IN_HOUSE: '본원간병', NONE: '없음' };
 const diaperLabel: Record<string, string> = { IN_HOUSE: '원내', PERSONAL: '본인', NONE: '미사용', CIRCLE: '원내', TRIANGLE: '본인' };
@@ -175,7 +175,7 @@ export async function generateSupplyReport(cost: any, period: { year: number; mo
    환자 통계 보고서
    ══════════════════════════════════════════════ */
 
-export async function generatePatientReport(stats: any, complaints: any, finance: any, dateRange: { from: string; to: string }) {
+export async function generatePatientReport(stats: any, finance: any, dateRange: { from: string; to: string }) {
   if (!stats) return;
 
   const overall = stats.overall || {};
@@ -298,24 +298,8 @@ export async function generatePatientReport(stats: any, complaints: any, finance
           ),
         ] : []),
 
-        // 4. 민원/상담 현황
-        heading('4. 민원·상담 현황'),
-        ...(complaints ? [
-          body(`보고 기간 총 ${complaints.total ?? 0}건의 민원·상담이 접수되었습니다. 이 중 민원 ${complaints.complaint_count ?? 0}건, 상담 ${complaints.counsel_count ?? 0}건이며, 처리율은 ${complaints.resolution_rate ?? 0}%입니다.`),
-          simpleTable(
-            ['구분', '건수'],
-            [
-              ['미처리', `${complaints.open ?? 0}건`],
-              ['처리중', `${complaints.in_progress ?? 0}건`],
-              ['처리 완료', `${complaints.closed ?? 0}건`],
-              ['총 건수', `${complaints.total ?? 0}건`],
-            ],
-          ),
-          body(`미처리 건수(${complaints.open ?? 0}건)에 대한 조속한 처리가 필요하며, 반복 발생하는 민원 유형에 대한 근본 원인 분석을 통해 재발 방지 대책을 수립할 것을 권고합니다.`),
-        ] : [body('민원·상담 데이터가 없습니다.')]),
-
-        // 5. 종합 의견
-        heading('5. 종합 의견'),
+        // 4. 종합 의견
+        heading('4. 종합 의견'),
         body(`보고 기간 병상 가동률 ${pct(overall.occupancy_rate)}로 ${(overall.occupancy_rate ?? 0) >= 90 ? '높은 수준을 유지하고 있으며, 병상 확충 또는 회전율 개선이 필요할 수 있습니다' : (overall.occupancy_rate ?? 0) >= 70 ? '안정적인 수준을 유지하고 있습니다' : '다소 낮은 수준이므로 입원 경로 다변화 및 홍보 강화를 검토할 필요가 있습니다'}.`),
         body(`환자 구성 측면에서는 환자군별·보험유형별 분포를 감안하여 간호 인력 배치를 최적화하고, 비급여 비중(${chargeTotal > 0 ? ((ncTotal / chargeTotal) * 100).toFixed(1) : 0}%)에 대한 적정성을 검토할 것을 제안합니다.`),
         body(`이상 보고합니다.`, { spacing: 200 }),

@@ -1,16 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../utils/api';
-import { PageHeader, FilterBar, DataTable, Modal, EmptyState, FilterChips, Pagination } from '../components/ui';
-import type { Column, FilterChip } from '../components/ui';
-import type { GoodsReceipt, Item, InventoryLocation, PendingReceiptFollowUp, PurchaseOrder } from '@shared/types';
+import { PageHeader, FilterBar, DataTable, Modal, EmptyState, FilterChips, Pagination, DateRangeFilter, inDateRange } from '../components/ui';
+import type { Column, FilterChip, DateRange } from '../components/ui';
+import type { GoodsReceipt, Item, InventoryLocation, PendingReceiptFollowUp, PurchaseOrder, Vendor } from '@shared/types';
 import { PackageCheck, Plus, Search, Eye, RotateCcw, CheckCircle, XCircle, Trash2, Save } from 'lucide-react';
+import { ReceiptHierarchyList } from './components/ReceiptHierarchyList';
 
-type ReceiptTabKey = 'REGISTER' | 'PENDING' | 'CONFIRMED' | 'DIFF_CONFIRMED' | 'REVERSED' | 'FOLLOW_UP' | 'ALL_LIST';
+type ReceiptTabKey = 'REGISTER' | 'PENDING' | 'COMPLETED' | 'FOLLOW_UP';
+type CompletedView = 'all' | 'confirmed' | 'diff' | 'reversed';
 
 type CreateLine = {
   item_id: string;
   item_name: string;
   uom: string;
+  issue_uom?: string;
+  pack_size?: number;
   received_qty: number;
   unit_price: number;
   location_id: string;
@@ -73,11 +77,17 @@ export default function ReceiptsPage() {
   const [loading, setLoading] = useState(true);
 
   const [receipts, setReceipts] = useState<GoodsReceipt[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  const filteredReceipts = useMemo(
+    () => receipts.filter(r => inDateRange((r as any).received_at, dateRange)),
+    [receipts, dateRange],
+  );
   const [followUps, setFollowUps] = useState<PendingReceiptFollowUp[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [poPeriodMeta, setPoPeriodMeta] = useState<Record<string, { label: string; start: string }>>({});
   const [items, setItems] = useState<Item[]>([]);
   const [locations, setLocations] = useState<InventoryLocation[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
 
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [modal, setModal] = useState<'create' | 'verify' | null>(null);
@@ -91,7 +101,7 @@ export default function ReceiptsPage() {
   const [rcptPage, setRcptPage] = useState(1);
   const [rcptPageSize, setRcptPageSize] = useState(20);
 
-  const [form, setForm] = useState({ purchase_order_id: '', note: '' });
+  const [form, setForm] = useState({ purchase_order_id: '', note: '', adjustment_amount: 0, adjustment_sign: 'MINUS' as 'MINUS' | 'PLUS', adjustment_note: '', received_at: '', vendor_id: '' });
   const [grItems, setGrItems] = useState<CreateLine[]>([]);
   const [itemSearch, setItemSearch] = useState('');
 
@@ -113,12 +123,13 @@ export default function ReceiptsPage() {
   const bootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const [receiptRows, orderRows, itemRows, locRows, followRows] = await Promise.all([
+      const [receiptRows, orderRows, itemRows, locRows, followRows, vendorRows] = await Promise.all([
         api('/receipts'),
         api('/purchase-orders'),
         api('/items?is_active=true'),
         api('/inventory/locations'),
         api('/receipts/follow-ups?status=OPEN'),
+        api('/vendors?is_active=true'),
       ]);
 
       const allReceipts = Array.isArray(receiptRows) ? receiptRows : [];
@@ -126,8 +137,17 @@ export default function ReceiptsPage() {
       setReceipts(allReceipts);
       setOrders(allOrders.filter(o => ['DRAFT', 'SENT', 'PARTIAL_RECEIVED'].includes(o.status)));
       setItems(Array.isArray(itemRows) ? itemRows : []);
-      setLocations(Array.isArray(locRows) ? locRows : []);
+      // 입고 위치 정렬 — 「총무구매 창고(CENTRAL)」 를 맨 위로 (기본값으로 잡히도록)
+      //   그 외는 기존 code 알파벳 순 유지. 부서 보관함이 첫 번째로 와서 잘못 입고되던 문제 해결.
+      const rawLocs = Array.isArray(locRows) ? locRows : [];
+      const sortedLocs = [...rawLocs].sort((a: any, b: any) => {
+        if (a.code === 'CENTRAL') return -1;
+        if (b.code === 'CENTRAL') return 1;
+        return 0;
+      });
+      setLocations(sortedLocs);
       setFollowUps(Array.isArray(followRows) ? followRows : []);
+      setVendors(Array.isArray(vendorRows) ? vendorRows : []);
 
       const nextMeta: Record<string, { label: string; start: string }> = {};
       for (const po of allOrders) {
@@ -164,10 +184,10 @@ export default function ReceiptsPage() {
     }
   }, [activeTab]);
 
-  const pendingReceipts = useMemo(() => receipts.filter(r => r.status === 'PENDING'), [receipts]);
-  const confirmedReceipts = useMemo(() => receipts.filter(r => r.status === 'CONFIRMED'), [receipts]);
-  const diffConfirmedReceipts = useMemo(() => receipts.filter(r => r.status === 'DIFF_CONFIRMED'), [receipts]);
-  const reversedReceipts = useMemo(() => receipts.filter(r => r.status === 'REVERSED'), [receipts]);
+  const pendingReceipts = useMemo(() => filteredReceipts.filter(r => r.status === 'PENDING'), [filteredReceipts]);
+  const confirmedReceipts = useMemo(() => filteredReceipts.filter(r => r.status === 'CONFIRMED'), [filteredReceipts]);
+  const diffConfirmedReceipts = useMemo(() => filteredReceipts.filter(r => r.status === 'DIFF_CONFIRMED'), [filteredReceipts]);
+  const reversedReceipts = useMemo(() => filteredReceipts.filter(r => r.status === 'REVERSED'), [filteredReceipts]);
 
   const availableOrders = useMemo(() => {
     const receiptPoIds = new Set(
@@ -224,7 +244,9 @@ export default function ReceiptsPage() {
       {
         item_id: item.id,
         item_name: item.name,
-        uom: item.uom,
+        uom: item.purchase_uom ?? item.uom,
+        issue_uom: (item as any).issue_uom ?? item.uom,
+        pack_size: Number((item as any).pack_size ?? 1),
         received_qty: 1,
         unit_price: item.latest_price || 0,
         location_id: locations[0]?.id || '',
@@ -245,7 +267,9 @@ export default function ReceiptsPage() {
         poItems.map((line: any) => ({
           item_id: line.item_id,
           item_name: line.item_name,
-          uom: line.uom,
+          uom: line.purchase_uom ?? line.uom,
+          issue_uom: line.issue_uom ?? line.uom,
+          pack_size: Number(line.pack_size ?? 1),
           received_qty: Number(line.ordered_qty || 0),
           unit_price: Number(line.unit_price || 0),
           location_id: locations[0]?.id || '',
@@ -261,9 +285,17 @@ export default function ReceiptsPage() {
       showMsg('err', '품목을 1개 이상 추가하세요.');
       return;
     }
-    if (grItems.some(g => !g.location_id)) {
-      showMsg('err', '모든 품목의 입고 위치를 선택하세요.');
-      return;
+    // 라인별 사전 검증 — 어느 라인이 문제인지 명시. 단가 음수 허용 (절사 품목 호환).
+    for (let i = 0; i < grItems.length; i++) {
+      const g = grItems[i] as any;
+      const issues: string[] = [];
+      if (!g.item_id) issues.push('품목 마스터 미연결 (자유입력 라인)');
+      if (!g.location_id) issues.push('입고 위치 미선택');
+      if (Number(g.received_qty ?? 0) < 0) issues.push('수량이 음수');
+      if (issues.length > 0) {
+        showMsg('err', `${i + 1}번째 라인 (${g.item_name ?? '?'}) — ${issues.join(' / ')}`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -273,6 +305,11 @@ export default function ReceiptsPage() {
         body: JSON.stringify({
           purchase_order_id: form.purchase_order_id || null,
           note: form.note,
+          // 저장식: 최종금액 = 라인합계 - adjustment_amount → 가산(+)은 음수로 저장.
+          adjustment_amount: Math.max(0, Number(form.adjustment_amount ?? 0)) * (form.adjustment_sign === 'PLUS' ? -1 : 1),
+          adjustment_note: form.adjustment_note,
+          received_at: form.received_at || null,
+          vendor_id: form.purchase_order_id ? null : (form.vendor_id || null),
           items: grItems.map(g => ({
             item_id: g.item_id,
             received_qty: g.received_qty,
@@ -283,7 +320,7 @@ export default function ReceiptsPage() {
       });
       showMsg('ok', '입고가 검수 대기로 등록되었습니다.');
       setModal(null);
-      setForm({ purchase_order_id: '', note: '' });
+      setForm({ purchase_order_id: '', note: '', adjustment_amount: 0, adjustment_sign: 'MINUS', adjustment_note: '', received_at: '', vendor_id: '' });
       setGrItems([]);
       setActiveTab('PENDING');
       await loadReceipts();
@@ -294,12 +331,30 @@ export default function ReceiptsPage() {
     }
   };
 
+  // 입고일자 수정용 — 검수 모달 안에서 인라인 편집
+  const [receivedAtEdit, setReceivedAtEdit] = useState('');
+  const [savingReceivedAt, setSavingReceivedAt] = useState(false);
+  // 거래처 수정용 (발주서 미연결 입고만 편집 가능)
+  const [vendorEdit, setVendorEdit] = useState('');
+  const [savingVendor, setSavingVendor] = useState(false);
+
+  const toDateInputValue = (iso: any) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const openVerifyModal = async (receiptId: string) => {
     setVerifyLoading(true);
     setModal('verify');
     try {
       const detail = await api(`/receipts/${receiptId}/verify`);
       setVerifyDetail(detail);
+      setReceivedAtEdit(toDateInputValue(detail?.received_at));
+      setVendorEdit(String(detail?.manual_vendor_id ?? ''));
       const qtyMap: Record<string, string> = {};
       const noteMap: Record<string, string> = {};
       for (const line of detail?.items || []) {
@@ -313,6 +368,48 @@ export default function ReceiptsPage() {
       showMsg('err', e.message || '검수 상세를 불러오지 못했습니다.');
     } finally {
       setVerifyLoading(false);
+    }
+  };
+
+  const saveReceivedAt = async () => {
+    if (!verifyDetail || !receivedAtEdit) return;
+    if (toDateInputValue(verifyDetail.received_at) === receivedAtEdit) return;
+    setSavingReceivedAt(true);
+    try {
+      await api(`/receipts/${verifyDetail.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ received_at: receivedAtEdit }),
+      });
+      const refreshed = await api(`/receipts/${verifyDetail.id}/verify`);
+      setVerifyDetail(refreshed);
+      setReceivedAtEdit(toDateInputValue(refreshed?.received_at));
+      showMsg('ok', '입고일자를 수정했습니다.');
+      await loadReceipts();
+    } catch (e: any) {
+      showMsg('err', e.message || '입고일자 수정에 실패했습니다.');
+    } finally {
+      setSavingReceivedAt(false);
+    }
+  };
+
+  const saveVendor = async () => {
+    if (!verifyDetail) return;
+    if (String((verifyDetail as any).manual_vendor_id ?? '') === vendorEdit) return;
+    setSavingVendor(true);
+    try {
+      await api(`/receipts/${verifyDetail.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ vendor_id: vendorEdit || null }),
+      });
+      const refreshed = await api(`/receipts/${verifyDetail.id}/verify`);
+      setVerifyDetail(refreshed);
+      setVendorEdit(String(refreshed?.manual_vendor_id ?? ''));
+      showMsg('ok', '거래처를 수정했습니다.');
+      await loadReceipts();
+    } catch (e: any) {
+      showMsg('err', e.message || '거래처 수정에 실패했습니다.');
+    } finally {
+      setSavingVendor(false);
     }
   };
 
@@ -393,25 +490,28 @@ export default function ReceiptsPage() {
     return <span className="badge-gray">{status}</span>;
   };
 
+  const [completedView, setCompletedView] = useState<CompletedView>('all');
   const receiptsForTab = useMemo(() => {
     if (activeTab === 'PENDING') return pendingReceipts;
-    if (activeTab === 'CONFIRMED') return confirmedReceipts;
-    if (activeTab === 'DIFF_CONFIRMED') return diffConfirmedReceipts;
-    if (activeTab === 'REVERSED') return reversedReceipts;
+    if (activeTab === 'COMPLETED') {
+      if (completedView === 'confirmed') return confirmedReceipts;
+      if (completedView === 'diff') return diffConfirmedReceipts;
+      if (completedView === 'reversed') return reversedReceipts;
+      // 'all' = 정상확정 + 차이확정 + 역전 (날짜 desc)
+      return [...confirmedReceipts, ...diffConfirmedReceipts, ...reversedReceipts]
+        .sort((a: any, b: any) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
+    }
     return [];
-  }, [activeTab, pendingReceipts, confirmedReceipts, diffConfirmedReceipts, reversedReceipts]);
+  }, [activeTab, completedView, pendingReceipts, confirmedReceipts, diffConfirmedReceipts, reversedReceipts]);
 
+  const completedTotal = confirmedReceipts.length + diffConfirmedReceipts.length + reversedReceipts.length;
   const tabDefs = useMemo<ReceiptTabDef[]>(
     () => [
-      { key: 'REGISTER', label: '입고등록' },
-      { key: 'PENDING', label: '검수대기', count: pendingReceipts.length },
-      { key: 'CONFIRMED', label: '확정완료', count: confirmedReceipts.length },
-      { key: 'DIFF_CONFIRMED', label: '차이확정', count: diffConfirmedReceipts.length },
-      { key: 'REVERSED', label: '역전', count: reversedReceipts.length },
-      { key: 'FOLLOW_UP', label: '미입고대기', count: followUps.length },
-      { key: 'ALL_LIST', label: '입고등록리스트', count: receipts.length },
+      { key: 'PENDING',   label: '검수대기',     count: pendingReceipts.length },
+      { key: 'COMPLETED', label: '입고완료',     count: completedTotal },
+      { key: 'FOLLOW_UP', label: '미입고대기',   count: followUps.length },
     ],
-    [pendingReceipts.length, confirmedReceipts.length, diffConfirmedReceipts.length, reversedReceipts.length, followUps.length, receipts.length],
+    [pendingReceipts.length, completedTotal, followUps.length],
   );
 
   const periodGroups = useMemo(() => {
@@ -437,7 +537,7 @@ export default function ReceiptsPage() {
       byStatus: Record<'PENDING' | 'CONFIRMED' | 'DIFF_CONFIRMED' | 'REVERSED', GoodsReceipt[]>;
     }>();
 
-    for (const r of receipts) {
+    for (const r of filteredReceipts) {
       const poMeta = r.purchase_order_id ? poPeriodMeta[r.purchase_order_id] : undefined;
       const label = poMeta?.label || toMonthLabel(r.received_at);
       const start = poMeta?.start || String(r.received_at);
@@ -467,7 +567,7 @@ export default function ReceiptsPage() {
           REVERSED: g.byStatus.REVERSED.sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime()),
         },
       }));
-  }, [receipts, poPeriodMeta]);
+  }, [filteredReceipts, poPeriodMeta]);
 
   const statusSectionLabel: Record<'PENDING' | 'CONFIRMED' | 'DIFF_CONFIRMED' | 'REVERSED', string> = {
     PENDING: '검수대기',
@@ -618,30 +718,47 @@ export default function ReceiptsPage() {
       <div className="flex gap-2 mb-3 overflow-x-auto pb-1 whitespace-nowrap">
         {tabDefs.map((t) => {
           const active = activeTab === t.key;
-          const showCount = t.key === 'PENDING' || t.key === 'FOLLOW_UP';
           return (
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
-              className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+              className={`h-10 shrink-0 rounded-full px-4 text-sm font-semibold border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
                 active
                   ? 'bg-[#0f9e93] text-white border-[#0f9e93] focus-visible:ring-[#6fd3cb]'
                   : 'bg-[#f3f4f6] text-[#334155] border-[#e5e7eb] hover:bg-[#eceff3] focus-visible:ring-[#cbd5e1]'
               }`}
             >
-              <span>{t.label}</span>
-              {showCount ? (
-                <span
-                  className={`inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full text-xs font-bold ${
-                    active ? 'bg-white/30 text-white' : 'bg-[#e2e8f0] text-[#475569]'
-                  }`}
-                >
-                  {fmt(t.count || 0)}
-                </span>
-              ) : null}
+              {t.label}
             </button>
           );
         })}
+      </div>
+
+      {activeTab === 'COMPLETED' && (
+        <div className="flex items-center gap-1 mb-3">
+          {([
+            ['all',       '전체'],
+            ['confirmed', '정상확정'],
+            ['diff',      '차이있음'],
+            ['reversed',  '역전됨'],
+          ] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => { setCompletedView(k); setRcptPage(1); }}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                completedView === k
+                  ? 'bg-teal-600 text-white border-teal-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-3">
+        <DateRangeFilter value={dateRange} onChange={setDateRange} label="입고일" />
       </div>
 
       {(() => {
@@ -652,7 +769,6 @@ export default function ReceiptsPage() {
         }
         const currentCount =
           activeTab === 'FOLLOW_UP' ? followUps.length :
-          activeTab === 'ALL_LIST' ? receipts.length :
           activeTab === 'REGISTER' ? 0 :
           receiptsForTab.length;
         return <FilterChips chips={rcptChips} totalCount={currentCount} onResetAll={() => { setActiveTab('PENDING'); setRcptPage(1); }} />;
@@ -682,105 +798,17 @@ export default function ReceiptsPage() {
             onPageSizeChange={setRcptPageSize}
           />
         </>
-      ) : activeTab === 'ALL_LIST' ? (
-        allPeriodGroups.length === 0 ? (
-          <EmptyState message="입고 내역이 없습니다." />
-        ) : (
-          <div className="space-y-4">
-            {allPeriodGroups.map((group) => (
-              <div key={`${group.label}-${group.start}`} className="rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                  <span className="text-sm font-semibold text-navy-800">{group.label}</span>
-                  <span className="text-xs text-gray-500">기간 라벨</span>
-                </div>
-                {(['PENDING', 'CONFIRMED', 'DIFF_CONFIRMED', 'REVERSED'] as const).map((statusKey) => {
-                  const rows = group.byStatus[statusKey];
-                  if (!rows.length) return null;
-                  return (
-                    <div key={statusKey} className="border-t border-gray-100">
-                      <div className="px-3 py-2 bg-white text-xs font-semibold text-gray-600">{statusSectionLabel[statusKey]}</div>
-                      <table className="tbl">
-                        <thead>
-                          <tr>
-                            <th>입고번호</th>
-                            <th>발주번호</th>
-                            <th>품목수</th>
-                            <th>등록일</th>
-                            <th>상태</th>
-                            <th>차이건수</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((r) => (
-                            <tr key={r.id}>
-                              <td className="font-medium text-accent-600">{r.gr_no}</td>
-                              <td className="text-xs">{r.po_no || '-'}</td>
-                              <td>{r.items?.length || 0}건</td>
-                              <td className="text-xs text-gray-500">{new Date(r.received_at).toLocaleDateString('ko-KR')}</td>
-                              <td>{statusBadge(r.status)}</td>
-                              <td>{fmt(Number(r.diff_count || 0))}</td>
-                              <td>
-                                <div className="flex gap-2">
-                                  {statusKey === 'PENDING' ? (
-                                    <button className="text-xs text-accent-600 hover:underline inline-flex items-center gap-1" onClick={() => openVerifyModal(r.id)}>
-                                      <CheckCircle className="w-3.5 h-3.5" /> 검수
-                                    </button>
-                                  ) : (
-                                    <button className="text-xs text-accent-600 hover:underline inline-flex items-center gap-1" onClick={() => openVerifyModal(r.id)}>
-                                      <Eye className="w-3.5 h-3.5" /> 상세
-                                    </button>
-                                  )}
-                                  {statusKey !== 'REVERSED' && (
-                                    <button className="text-xs text-red-500 hover:underline inline-flex items-center gap-1" onClick={() => reverseReceipt(r.id)}>
-                                      <RotateCcw className="w-3.5 h-3.5" /> 역전
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        )
       ) : periodGroups.length === 0 ? (
         <EmptyState message="해당 상태의 입고 내역이 없습니다." />
       ) : (
-        <>
-          <div className="space-y-4">
-            {periodGroups.map(group => {
-              const paginatedRows = group.rows.slice((rcptPage - 1) * rcptPageSize, rcptPage * rcptPageSize);
-              return (
-                <div key={`${group.label}-${group.start}`} className="rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                    <span className="text-sm font-semibold text-navy-800">{group.label}</span>
-                    <span className="text-xs text-gray-500">기간 라벨</span>
-                  </div>
-                  <DataTable<GoodsReceipt>
-                    columns={receiptColumns}
-                    data={paginatedRows}
-                    keyField="id"
-                    onRowClick={(r) => openVerifyModal(r.id)}
-                    emptyMessage="입고 내역이 없습니다."
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <Pagination
-            currentPage={rcptPage}
-            totalItems={receiptsForTab.length}
-            pageSize={rcptPageSize}
-            onPageChange={setRcptPage}
-            onPageSizeChange={setRcptPageSize}
-          />
-        </>
+        <ReceiptHierarchyList
+          receipts={receiptsForTab}
+          openVerify={openVerifyModal}
+          fmt={fmt}
+          canReverse
+          reverse={reverseReceipt}
+          onPeriodChanged={loadReceipts}
+        />
       )}
 
       {/* 입고 등록 모달 */}
@@ -822,6 +850,33 @@ export default function ReceiptsPage() {
             <label className="label">비고</label>
             <input className="input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
           </div>
+          <div>
+            <label className="label">입고일자</label>
+            <input
+              type="date"
+              className="input"
+              value={form.received_at}
+              onChange={e => setForm(f => ({ ...f, received_at: e.target.value }))}
+            />
+            <p className="mt-1 text-xs text-gray-500">비워두면 오늘 날짜로 등록. 과거 입고를 소급 등록할 때 지정.</p>
+          </div>
+          <div>
+            <label className="label">거래처</label>
+            {form.purchase_order_id ? (
+              <div className="input bg-gray-50 text-gray-600 text-sm flex items-center">
+                {selectedOrder?.vendor_name || '-'} <span className="ml-2 text-xs text-gray-400">(발주서에서 자동)</span>
+              </div>
+            ) : (
+              <select
+                className="input"
+                value={form.vendor_id}
+                onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}
+              >
+                <option value="">선택 안 함 (품목 기본 거래처로 자동)</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            )}
+          </div>
         </div>
 
         {selectedOrder && (
@@ -857,8 +912,8 @@ export default function ReceiptsPage() {
               <thead>
                 <tr>
                   <th>품목</th>
-                  <th className="text-right">수량</th>
-                  <th className="text-right">단가</th>
+                  <th className="text-right">수량 (발주단위)</th>
+                  <th className="text-right">단가 (발주단위)</th>
                   <th>입고 위치</th>
                   <th></th>
                 </tr>
@@ -866,7 +921,15 @@ export default function ReceiptsPage() {
               <tbody>
                 {grItems.map(g => (
                   <tr key={g.item_id}>
-                    <td>{g.item_name} <span className="text-xs text-gray-400">{g.uom}</span></td>
+                    <td>
+                      <div>{g.item_name}</div>
+                      <div className="text-xs text-slate-400">
+                        {g.uom}
+                        {Number(g.pack_size ?? 1) > 1 && g.issue_uom && g.issue_uom !== g.uom &&
+                          <span className="text-blue-500 ml-1">(1{g.uom}={g.pack_size}{g.issue_uom})</span>
+                        }
+                      </div>
+                    </td>
                     <td>
                       <input
                         className="input w-20 sm:w-24 text-right"
@@ -908,6 +971,60 @@ export default function ReceiptsPage() {
             </table>
           </div>
         )}
+
+        {/* 절사·가산 (인라인) */}
+        <div className="mt-3 flex flex-wrap items-end gap-3 text-sm">
+          <div>
+            <label className="text-xs text-slate-500">절사/가산</label>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className={`px-2.5 py-2 rounded-lg text-xs font-semibold border ${form.adjustment_sign === 'MINUS' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-400 border-gray-200'}`}
+                onClick={() => setForm(f => ({ ...f, adjustment_sign: 'MINUS' }))}
+              >
+                − 절사
+              </button>
+              <button
+                type="button"
+                className={`px-2.5 py-2 rounded-lg text-xs font-semibold border ${form.adjustment_sign === 'PLUS' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-400 border-gray-200'}`}
+                onClick={() => setForm(f => ({ ...f, adjustment_sign: 'PLUS' }))}
+              >
+                + 가산
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">금액 (₩)</label>
+            <input
+              type="number"
+              min={0}
+              value={form.adjustment_amount || 0}
+              onChange={e => setForm(f => ({ ...f, adjustment_amount: Math.max(0, Number(e.target.value || 0)) }))}
+              className="input w-28"
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs text-slate-500">사유</label>
+            <input
+              type="text"
+              placeholder={form.adjustment_sign === 'PLUS' ? '배송비, 설치비 등 가산 사유 (선택)' : '원단위 절사 등 (선택)'}
+              value={form.adjustment_note}
+              onChange={e => setForm(f => ({ ...f, adjustment_note: e.target.value }))}
+              className="input"
+            />
+          </div>
+          {grItems.length > 0 && (
+            <div className="text-right text-sm">
+              <div className="text-xs text-slate-500">최종 총액</div>
+              <div className="font-bold text-blue-700">
+                ₩{Math.round(
+                  grItems.reduce((s, g) => s + Number(g.received_qty || 0) * Number(g.unit_price || 0), 0)
+                  + (form.adjustment_sign === 'PLUS' ? 1 : -1) * Number(form.adjustment_amount || 0)
+                ).toLocaleString('ko-KR')}
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* 검수 상세 모달 */}
@@ -933,8 +1050,57 @@ export default function ReceiptsPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-sm">
-              <div><span className="label">발주번호</span><p>{verifyDetail.po_no || '-'}</p></div>
-              <div><span className="label">등록일</span><p>{new Date(verifyDetail.received_at).toLocaleDateString('ko-KR')}</p></div>
+              <div><span className="label">발주번호</span><p>{verifyDetail.po_no || <span className="text-gray-400">수기 등록</span>}</p></div>
+              <div>
+                <span className="label">거래처</span>
+                {verifyDetail.purchase_order_id ? (
+                  <p className="text-sm">{verifyDetail.vendor_name || '-'} <span className="text-xs text-gray-400">(발주서)</span></p>
+                ) : verifyDetail.status === 'REVERSED' ? (
+                  <p className="text-sm">{verifyDetail.vendor_name || '-'}</p>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <select
+                      className="input flex-1 text-sm"
+                      value={vendorEdit}
+                      onChange={e => setVendorEdit(e.target.value)}
+                      disabled={savingVendor}
+                    >
+                      <option value="">선택 안 함</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                    {vendorEdit !== String(verifyDetail.manual_vendor_id ?? '') && (
+                      <button
+                        className="btn-primary text-xs px-2 py-1 whitespace-nowrap"
+                        onClick={saveVendor}
+                        disabled={savingVendor}
+                      >
+                        {savingVendor ? '저장 중' : '저장'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <span className="label">입고일자</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    className="input flex-1"
+                    value={receivedAtEdit}
+                    onChange={e => setReceivedAtEdit(e.target.value)}
+                    disabled={verifyDetail.status === 'REVERSED' || savingReceivedAt}
+                  />
+                  {receivedAtEdit && receivedAtEdit !== toDateInputValue(verifyDetail.received_at) && (
+                    <button
+                      className="btn-primary text-xs px-2 py-1 whitespace-nowrap"
+                      onClick={saveReceivedAt}
+                      disabled={savingReceivedAt}
+                    >
+                      {savingReceivedAt ? '저장 중' : '저장'}
+                    </button>
+                  )}
+                </div>
+              </div>
               <div><span className="label">상태</span><div>{statusBadge(verifyDetail.status)}</div></div>
               <div><span className="label">차이건수</span><p>{fmt(Number(verifyDetail.diff_count || 0))}</p></div>
             </div>
@@ -943,8 +1109,8 @@ export default function ReceiptsPage() {
                 <thead>
                   <tr>
                     <th>품목</th>
-                    <th className="text-right">기대수량</th>
-                    <th className="text-right">실입고확정수량</th>
+                    <th className="text-right">기대수량(발주단위)</th>
+                    <th className="text-right">확정수량(발주단위)</th>
                     <th className="text-right">차이</th>
                     <th>사유</th>
                     <th></th>
@@ -957,7 +1123,15 @@ export default function ReceiptsPage() {
                     const diff = confirmed - expected;
                     return (
                       <tr key={line.id || line.item_id}>
-                        <td>{line.item_name} <span className="text-xs text-gray-400">{line.uom}</span></td>
+                        <td>
+                          <div>{line.item_name}</div>
+                          <div className="text-xs text-slate-400">
+                            {line.uom}
+                            {Number(line.pack_size ?? 1) > 1 && line.issue_uom && line.issue_uom !== line.uom &&
+                              <span className="text-blue-500 ml-1">(1{line.uom}={line.pack_size}{line.issue_uom})</span>
+                            }
+                          </div>
+                        </td>
                         <td className="text-right">{fmt(expected)}</td>
                         <td>
                           <input

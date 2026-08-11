@@ -41,9 +41,19 @@ export async function api(endpoint: string, options: RequestInit = {}): Promise<
     return res.blob();
   }
 
-  const data = await res.json();
+  // 응답 본문이 JSON 이 아닐 수 있음 (서버가 HTML 404 등 반환).
+  // 파싱 실패 시 status code 와 url 을 담은 명확한 에러로 재포장.
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    if (!res.ok) {
+      throw new Error(`서버 응답 오류 (${res.status}) — ${endpoint}. 서버 재시작이 필요할 수 있습니다.`);
+    }
+    return null;
+  }
   if (!res.ok) {
-    throw new Error(data.error || '요청 처리 중 오류가 발생했습니다.');
+    throw new Error(data?.error || `요청 처리 중 오류가 발생했습니다. (${res.status})`);
   }
   return data;
 }

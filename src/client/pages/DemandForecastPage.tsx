@@ -384,7 +384,10 @@ export default function DemandForecastPage() {
               {selectedItem.needs_reorder && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                   <div className="text-sm font-medium text-red-700">
-                    발주 추천: {fmt(selectedItem.recommended_order_qty)} {selectedItem.uom}
+                    발주 추천: {fmt((selectedItem as any).recommended_order_purchase_qty ?? selectedItem.recommended_order_qty)} {(selectedItem as any).purchase_uom ?? selectedItem.uom}
+                    {((selectedItem as any).pack_size ?? 1) > 1 && (selectedItem as any).purchase_uom !== (selectedItem as any).issue_uom && (
+                      <span className="text-xs font-normal ml-2">(≈{fmt(selectedItem.recommended_order_qty)} {(selectedItem as any).issue_uom ?? selectedItem.uom})</span>
+                    )}
                   </div>
                   <div className="text-xs text-red-500 mt-1">
                     {selectedItem.vendor_name && `업체: ${selectedItem.vendor_name} | `}

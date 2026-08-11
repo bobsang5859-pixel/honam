@@ -91,11 +91,14 @@ export async function allocateFifo(
   },
 ) {
   let remain = Number(params.issueQty) || 0;
+  // 사용자 지정 우선순위(sort_order > 0) 먼저 적용, 그 외는 received_at 오름차순(기본 FIFO).
+  // sort_order = 0 (기본) 인 lot 들은 큰 값으로 fallback 시켜 명시 우선순위 lot 들 뒤에 가게 함.
   const lots = await db.$queryRawUnsafe(
     `SELECT id, remaining_qty, unit_cost
     FROM inventory_lots
     WHERE deleted_at IS NULL AND item_id = ? AND location_id = ? AND remaining_qty > 0
-    ORDER BY datetime(received_at) ASC, id ASC`,
+    ORDER BY (CASE WHEN sort_order > 0 THEN sort_order ELSE 999999 END) ASC,
+             datetime(received_at) ASC, id ASC`,
     params.itemId, params.locationId,
   );
   for (const lot of lots) {
@@ -121,8 +124,61 @@ export async function allocateFifo(
     remain = Number((remain - take).toFixed(6));
   }
   if (remain > 0) {
-    throw new Error(`FIFO_LOT_SHORTAGE:${remain}`);
+    // 음수 재고 허용: 가용 LOT 부족분은 inventory_lot_id=NULL 로 기록.
+    // 단가는 fallback (lot 평균 → inventory.avg_unit_cost → PriceHistory PO ÷ pack_size) 적용.
+    // 0원으로 두면 부서별 비용 통계가 왜곡되므로 합리적 단가를 추정해 line_amount 채움.
+    const fallbackCost = await resolveFallbackUnitCost(db, params.itemId);
+    const lineAmount = Number((remain * fallbackCost).toFixed(2));
+    await db.$executeRawUnsafe(
+      `INSERT INTO stock_out_lot_allocations
+        (id, stock_out_item_id, stock_out_id, inventory_lot_id, issued_qty, unit_cost, line_amount)
+      VALUES (?, ?, ?, NULL, ?, ?, ?)`,
+      uuidv4(), params.stockOutItemId, params.stockOutId, remain, fallbackCost, lineAmount,
+    );
   }
+}
+
+// Unallocated 라인의 ea 단위 fallback 단가 결정.
+// 우선순위: 1) 같은 품목의 모든 lot 가중평균 unit_cost (deleted 제외, remaining > 0)
+//          2) 같은 품목의 inventory.avg_unit_cost 최댓값 (위치 무관)
+//          3) PriceHistory PO source 최근 단가 ÷ items.pack_size
+//          4) 0
+export async function resolveFallbackUnitCost(db: DbClient, itemId: string): Promise<number> {
+  // 1) lot 가중평균
+  const lotRows = await db.$queryRawUnsafe(
+    `SELECT CASE WHEN SUM(remaining_qty) > 0
+                 THEN SUM(remaining_qty * unit_cost) / SUM(remaining_qty)
+                 ELSE NULL END AS cost
+     FROM inventory_lots
+     WHERE deleted_at IS NULL AND item_id = ? AND remaining_qty > 0 AND unit_cost > 0`,
+    itemId,
+  ) as Array<{ cost: number | null }>;
+  const lotCost = Number(lotRows?.[0]?.cost ?? 0);
+  if (lotCost > 0) return lotCost;
+
+  // 2) inventory.avg_unit_cost 최댓값
+  const invRows = await db.$queryRawUnsafe(
+    `SELECT MAX(avg_unit_cost) AS cost
+     FROM inventory WHERE item_id = ? AND avg_unit_cost > 0`,
+    itemId,
+  ) as Array<{ cost: number | null }>;
+  const invCost = Number(invRows?.[0]?.cost ?? 0);
+  if (invCost > 0) return invCost;
+
+  // 3) PriceHistory PO ÷ pack_size
+  const phRows = await db.$queryRawUnsafe(
+    `SELECT ph.price AS price, i.pack_size AS pack_size
+     FROM price_history ph
+     JOIN items i ON i.id = ph.item_id
+     WHERE ph.item_id = ? AND ph.source = 'PO'
+     ORDER BY ph.effective_from DESC LIMIT 1`,
+    itemId,
+  ) as Array<{ price: number | null; pack_size: number | null }>;
+  const phPrice = Number(phRows?.[0]?.price ?? 0);
+  const ps = Math.max(1, Number(phRows?.[0]?.pack_size ?? 1));
+  if (phPrice > 0) return phPrice / ps;
+
+  return 0;
 }
 
 export async function reverseAllocationsByStockOut(db: DbClient, stockOutId: string) {

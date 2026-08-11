@@ -9,3 +9,5 @@ export type { Column } from './DataTable';
 export { default as FilterChips } from './FilterChips';
 export type { FilterChip } from './FilterChips';
 export { default as Pagination } from './Pagination';
+export { default as DateRangeFilter, inDateRange } from './DateRangeFilter';
+export type { DateRange } from './DateRangeFilter';

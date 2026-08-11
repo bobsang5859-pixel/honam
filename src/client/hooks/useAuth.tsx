@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api, setToken, getToken } from '../utils/api';
 import type { AuthUser } from '@shared/types';
+import { checkPermission } from '@shared/permissions';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -52,9 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const isAdmin = user?.permissions.includes('SYSTEM_ADMIN') ?? false;
-  const hasPerm = (perm: string) => isAdmin || (user?.permissions.includes(perm) ?? false);
-  const hasAnyPerm = (...perms: string[]) => isAdmin || perms.some(p => user?.permissions.includes(p) ?? false);
+  // PERM_HIERARCHY 양방향 검사 적용 — 묶음 권한이 분해된 하위 권한들로도 통과
+  // 예: REQUEST_USE의 하위 4개를 모두 보유하면 hasPerm('REQUEST_USE') = true
+  const hasPerm = (perm: string) => user ? checkPermission(user.permissions, perm) : false;
+  const hasAnyPerm = (...perms: string[]) => user ? checkPermission(user.permissions, undefined, perms) : false;
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, hasPerm, hasAnyPerm }}>

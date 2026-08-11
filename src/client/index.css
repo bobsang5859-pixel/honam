@@ -74,8 +74,14 @@ body {
   .tbl th {
     @apply text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap;
   }
+  .tbl th:not(:last-child) {
+    border-right: 1px solid #e2e8f0;
+  }
   .tbl td {
-    @apply px-4 py-3 border-b border-gray-50 text-gray-700;
+    @apply px-4 py-3 border-b border-gray-200 text-gray-700;
+  }
+  .tbl td:not(:last-child) {
+    border-right: 1px solid #e2e8f0;
   }
   .tbl tbody tr:hover td {
     @apply bg-green-50/60;
@@ -184,6 +190,15 @@ body {
     padding-right: 0.625rem;
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
+  }
+
+  /* iOS Safari 등은 포커스된 입력창 글자가 16px보다 작으면 화면을 자동으로 확대함 —
+     입력창 글자를 16px로 키워서 탭해도 화면 배율이 그대로 유지되게 함(핀치줌은 그대로 살아있음) */
+  .input,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
   }
 
   /* 사이드바 전용 커스텀 스크롤바 */

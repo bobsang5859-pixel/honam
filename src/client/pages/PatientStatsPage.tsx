@@ -42,7 +42,7 @@ const SECTION_TABS: Record<StatsSection, StatsTab[]> = {
   info: ['group', 'insurance', 'special', 'period', 'caregiver', 'diaper', 'hospital', 'address', 'referral', 'discharge', 'discharge_reason', 'covered', 'non_covered'],
 };
 
-const patientGroupLabel: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가' };
+const patientGroupLabel: Record<string, string> = { HIGHEST: '최고도', HIGH: '고도', MEDIUM: '중도', LOW: '경도', SELECT: '선택', UNRATED: '미평가', PNEUMONIA: '폐렴', SEPSIS: '패혈증', INFECTION: '감염' };
 const insuranceLabel: Record<string, string> = { HEALTH: '건강보험', MEDICAL_1: '의료급여 1종', MEDICAL_2: '의료급여 2종', WORKERS_COMP: '산재보험', AUTO_INS: '자동차보험' };
 const specializationLabel: Record<string, string> = { INFECT: '감염', DIALYSIS: '투석', REHAB: '재활' };
 const periodLabel: Record<string, string> = { PNEUMONIA: '폐렴', SEPSIS: '패혈증' };
@@ -144,7 +144,19 @@ function BreakdownCard({ title, data, labelMap, excludeUnregistered }: { title: 
 }
 
 
-export default function PatientStatsPage({ section = 'all' as StatsSection }: { section?: StatsSection }) {
+export default function PatientStatsPage({
+  section = 'all' as StatsSection,
+  deptId = '',
+  departments,
+  onDeptChange,
+  canViewAll,
+}: {
+  section?: StatsSection;
+  deptId?: string;
+  departments?: Array<{ id: string; name: string }>;
+  onDeptChange?: (id: string) => void;
+  canViewAll?: boolean;
+}) {
   const visibleTabs = ALL_TABS.filter(t => SECTION_TABS[section].includes(t.key));
   const [tab, setTab] = useState<StatsTab>(visibleTabs[0]?.key || 'all');
   const [from, setFrom] = useState(new Date().toISOString().slice(0, 7) + '-01');
@@ -158,6 +170,7 @@ export default function PatientStatsPage({ section = 'all' as StatsSection }: { 
     setError(null);
     try {
       const p = new URLSearchParams({ date_from: from, date_to: to });
+      if (deptId) p.set('department_id', deptId);
       const data = await api(`/patients/stats?${p.toString()}`);
       setStats(data);
     } catch (e: any) {
@@ -167,7 +180,7 @@ export default function PatientStatsPage({ section = 'all' as StatsSection }: { 
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [deptId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rowsForBreakdown = useMemo(() => {
     if (!stats?.breakdown) return [] as { name: string; count: number }[];
@@ -239,6 +252,18 @@ export default function PatientStatsPage({ section = 'all' as StatsSection }: { 
 
       {/* 필터 바 */}
       <StatsFilterBar>
+        {canViewAll && onDeptChange && departments && (
+          <div>
+            <label className="text-[11px] font-medium text-slate-500 block mb-1">병동/부서</label>
+            <select value={deptId} onChange={(e) => onDeptChange(e.target.value)}
+              className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="">전체 부서</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-[11px] font-medium text-slate-500 block mb-1">시작일</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
@@ -292,6 +317,21 @@ export default function PatientStatsPage({ section = 'all' as StatsSection }: { 
                 <BreakdownCard title="기저귀 현황" data={stats.breakdown?.diaper ?? {}} labelMap={diaperLabel} />
                 <BreakdownCard title="특정기간 현황" data={stats.breakdown?.period_type ?? {}} labelMap={periodLabel} />
                 <BreakdownCard title="감염균주 현황" data={stats.breakdown?.infection_strain ?? {}} labelMap={infectionStrainLabel} />
+                <BreakdownCard
+                  title="재활구분 분포"
+                  data={stats.breakdown?.rehab_type ?? {}}
+                  labelMap={{ CNS: 'CNS (뇌신경계)', OS: 'CNS 외 (정형·기타)', OUTPATIENT: '외래', NONE: '해당없음' }}
+                />
+                <BreakdownCard
+                  title="Onset 분포 (CNS)"
+                  data={stats.breakdown?.onset_bucket_by_rehab?.CNS ?? {}}
+                  labelMap={{ lt6m: '~6m', '6m_1y6m': '6m~1y6m', '1y6m_2y': '1y6m~2y', '2y_5y': '2y~5y', '5y_7y': '5y~7y', gt7y: '7y+', none: '발병일 미입력' }}
+                />
+                <BreakdownCard
+                  title="Onset 분포 (CNS 외)"
+                  data={stats.breakdown?.onset_bucket_by_rehab?.OS ?? {}}
+                  labelMap={{ lt6m: '~6m', '6m_1y6m': '6m~1y6m', '1y6m_2y': '1y6m~2y', '2y_5y': '2y~5y', '5y_7y': '5y~7y', gt7y: '7y+', none: '발병일 미입력' }}
+                />
                 <BreakdownCard title="입원전병원 분포" data={stats.breakdown?.prev_hospital ?? {}} labelMap={{}} excludeUnregistered />
               </div>
             </div>

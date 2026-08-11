@@ -25,6 +25,23 @@ router.get('/public-info', async (_req, res) => {
 
 router.use(authMiddleware);
 
+// 인증된 모든 사용자가 사용하는 세션 타임아웃 설정 — 민감 정보 없이 안전하게 노출
+router.get('/session-config', async (_req, res) => {
+  try {
+    const rows = await prisma.appSetting.findMany({ where: { key: { in: ['SESSION_TIMEOUT_MIN', 'SESSION_WARN_BEFORE_MIN'] } } });
+    const get = (key: string, def: number) => {
+      const r = rows.find(x => x.key === key);
+      return r ? (parseInt(r.value) || def) : def;
+    };
+    res.json({
+      timeoutMin: get('SESSION_TIMEOUT_MIN', 30),
+      warnBeforeMin: get('SESSION_WARN_BEFORE_MIN', 5),
+    });
+  } catch {
+    res.json({ timeoutMin: 30, warnBeforeMin: 5 });
+  }
+});
+
 router.get('/settings', requirePermission('SYSTEM_ADMIN'), async (req, res) => {
   try {
     const settings = await prisma.appSetting.findMany({ orderBy: { key: 'asc' } });

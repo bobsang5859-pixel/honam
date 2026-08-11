@@ -1,10 +1,31 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Monitor } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Monitor, Plus, Trash2, XCircle, Search, Send, RotateCcw, Camera, ImageIcon, ClipboardList, List, Eye } from 'lucide-react';
 import { api } from '../utils/api';
 import { useAuth } from '../hooks/useAuth';
-import { PageHeader } from '../components/ui';
-import type { WardRequest, Item } from '@shared/types';
+import { PageHeader, EmptyState, Modal, FilterBar } from '../components/ui';
+import type { Item, WardRequest } from '@shared/types';
 import { EQUIPMENT_CATEGORIES } from '@shared/types';
+
+// 비품 카테고리 계층 (대분류 → 중분류)
+const EQUIPMENT_HIERARCHY = [
+  { label: '의료장비', major: 'MED', subs: [
+    { label: '의료기기',         value: 'EQUIP_MEDICAL' },
+    { label: '의료기기 부속품',  value: 'EQUIP_ACCESSORY' },
+    { label: '의료보조장비',     value: 'EQUIP_AID' },
+  ]},
+  { label: '일반비품', major: 'GEN', subs: [
+    { label: '사무용가구', value: 'EQUIP_FURNITURE' },
+    { label: '가전제품',   value: 'EQUIP_APPLIANCE' },
+    { label: '생활',       value: 'EQUIP_LIVING' },
+  ]},
+  { label: 'IT·안전', major: 'IT', subs: [
+    { label: '전산·IT장비',   value: 'EQUIP_IT' },
+    { label: '안전·위생장비', value: 'EQUIP_SAFETY' },
+  ]},
+];
+
+const today = () => new Date().toISOString().slice(0, 10);
+const fmt = (n: number | null | undefined) => new Intl.NumberFormat('ko-KR').format(Number(n ?? 0));
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: '임시저장', SUBMITTED: '제출됨', APPROVED: '승인됨',
@@ -15,194 +36,219 @@ const STATUS_CLS: Record<string, string> = {
   PARTIAL_APPROVED: 'badge-yellow', REJECTED: 'badge-red', CANCELLED: 'badge-gray',
 };
 
-// 비품 카테고리 계층 (대분류 → 중분류)
-const EQUIPMENT_HIERARCHY = [
-  { label: '의료장비', subs: [
-    { label: '의료기기',     value: 'EQUIP_MEDICAL' },
-    { label: '의료보조장비', value: 'EQUIP_AID' },
-  ]},
-  { label: '일반비품', subs: [
-    { label: '사무용가구', value: 'EQUIP_FURNITURE' },
-    { label: '가전제품',   value: 'EQUIP_APPLIANCE' },
-  ]},
-  { label: 'IT·안전', subs: [
-    { label: '전산·IT장비',   value: 'EQUIP_IT' },
-    { label: '안전·위생장비', value: 'EQUIP_SAFETY' },
-  ]},
-];
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-const EQ_TYPES = [
-  { value: 'DISPOSAL', label: '폐기', activeBg: 'bg-red-500',    inactiveBg: 'bg-red-50',    activeTxt: 'text-white', inactiveTxt: 'text-red-600',    border: 'border-red-300' },
-  { value: 'ADDITION', label: '추가', activeBg: 'bg-blue-500',   inactiveBg: 'bg-blue-50',   activeTxt: 'text-white', inactiveTxt: 'text-blue-600',   border: 'border-blue-300' },
+// 신청 유형
+const REQ_TYPES = [
+  { value: 'ADDITION', label: '추가 신청', desc: '신규 비품 도입', color: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300' },
+  { value: 'DISPOSAL', label: '폐기 신청', desc: '보유 비품 폐기', color: 'bg-red-500',  light: 'bg-red-50',  text: 'text-red-700',  border: 'border-red-300' },
 ] as const;
+type ReqType = typeof REQ_TYPES[number]['value'];
 
 const REASON_PRESETS: Record<string, string[]> = {
   DISPOSAL: ['노후 (사용연한 경과)', '파손', '고장수리불가', '분실', '오염/위생문제', '규격·모델 변경', '과다보유 정리'],
   ADDITION: ['신규 필요', '인원 증가', '병상 증가', '폐기 대체', '수량 부족', '시범 도입', '시설 확장'],
 };
 
-const EQ_TYPE_LABEL: Record<string, string> = { DISPOSAL: '폐기', ADDITION: '추가', REPAIR: '수리' };
-const EQ_TYPE_BADGE: Record<string, string>  = { DISPOSAL: 'badge-red', ADDITION: 'badge-blue', REPAIR: 'badge-yellow' };
+interface CartItem {
+  item_id: string;
+  item_name: string;
+  item_code: string;
+  qty: number;
+  reason: string;
+  attachments: string[];
+}
 
 export default function EquipmentRequestPage() {
   const { user, hasPerm } = useAuth();
   const canCreate  = hasPerm('REQUEST_USE');
   const canViewAll = hasPerm('PURCHASE_MANAGE');
 
-  // ── 페이지 탭 ─────────────────────────────────────────────
   const [pageTab, setPageTab] = useState<'create' | 'list'>(canCreate ? 'create' : 'list');
 
-  // ── 신청현황 탭 state ─────────────────────────────────────
+  // ── 신청현황 탭 ───────────────────────────────────────────
   const [requests, setRequests]         = useState<WardRequest[]>([]);
-  const [loading, setLoading]           = useState(true);
+  const [loadingList, setLoadingList]   = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
-  const [modal, setModal]               = useState<'detail' | null>(null);
   const [detail, setDetail]             = useState<WardRequest | null>(null);
+  const [detailOpen, setDetailOpen]     = useState(false);
 
-  // ── 비품 신청 탭 state ────────────────────────────────────
-  const [items, setItems]       = useState<Item[]>([]);
+  // ── 신청 작성 탭 ──────────────────────────────────────────
+  const [reqType, setReqType] = useState<ReqType>('ADDITION');
+  const [items, setItems]     = useState<Item[]>([]);
+  const [stocks, setStocks]   = useState<Record<string, number>>({});
   const [majorCat, setMajorCat] = useState<string | null>(null);
-  const [subCat,   setSubCat]   = useState<string | null>(null);
-  const [qtys, setQtys]         = useState<Record<string, number>>({});
+  const [subCat, setSubCat]     = useState<string | null>(null);
+  const [search, setSearch]     = useState('');
+  const [cart, setCart]         = useState<CartItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    is_emergency:   false,
-    equipment_type: '' as string,
-    reason:         '' as string,
-  });
 
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const showMsg = (t: 'ok'|'err', m: string) => { setMsg({type:t, text:m}); setTimeout(() => setMsg(null), 3500); };
 
-  const focusNextRowInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const td = e.currentTarget.closest('td');
-    const tr = e.currentTarget.closest('tr');
-    const table = e.currentTarget.closest('table');
-    if (!td || !tr || !table) return;
-    const col = (td as HTMLTableCellElement).cellIndex;
-    const rows = Array.from(table.querySelectorAll('tbody tr'));
-    const idx = rows.indexOf(tr as HTMLTableRowElement);
-    for (let i = idx + 1; i < rows.length; i++) {
-      const rowEl = rows[i] as HTMLTableRowElement;
-      const next = rowEl.cells[col]?.querySelector('input[type="number"]') as HTMLInputElement | null;
-      if (next && !next.disabled) {
-        next.focus();
-        next.select();
-        break;
-      }
-    }
-  };
-  const showMsg = (type: 'ok' | 'err', text: string) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3500); };
-
-  // 사진 첨부
-  const [attachments, setAttachments] = useState<string[]>([]);
+  // 카드 클릭 → 신청 모달
+  const [editCart, setEditCart] = useState<CartItem | null>(null);
+  const [editIsNew, setEditIsNew] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── 데이터 로드 ───────────────────────────────────────────
+  const loadList = useCallback(() => {
+    setLoadingList(true);
+    const p = new URLSearchParams();
+    p.set('type', 'EQUIPMENT');
+    if (filterStatus) p.set('status', filterStatus);
+    api(`/ward-requests?${p}`).then(setRequests).catch(console.error).finally(() => setLoadingList(false));
+  }, [filterStatus]);
+  useEffect(() => { loadList(); }, [loadList]);
+
+  const loadItemsAndStock = useCallback(() => {
+    if (!canCreate) return;
+    const equipCatValues = EQUIPMENT_CATEGORIES.map(c => c.value);
+    Promise.all([
+      api('/items?is_active=true'),
+      api('/dept-permissions/my-items').catch(() => ({ item_ids: null })),
+      api('/inventory/snapshot').catch(() => ({ stocks: {} })),
+    ]).then(([allItems, permData, stockData]) => {
+      const item_ids: string[] | null = permData?.item_ids ?? null;
+      const equipItems: Item[] = allItems.filter((i: any) => equipCatValues.includes(i.category ?? ''));
+      // null = 무제한 허용, 배열 = 그 목록만 (빈 배열도 "0개 보임"의 정상 의미)
+      const filtered = item_ids === null
+        ? equipItems
+        : equipItems.filter(i => item_ids.includes(i.id));
+      setItems(filtered);
+      setStocks(stockData?.stocks ?? {});
+    }).catch(() => {});
+  }, [canCreate]);
+  useEffect(() => { loadItemsAndStock(); }, [loadItemsAndStock]);
+
+  // ── 모드 변경 시 장바구니 비우기 ──────────────────────────
+  const switchType = (t: ReqType) => {
+    if (t === reqType) return;
+    if (cart.length > 0 && !confirm('장바구니가 초기화됩니다. 계속할까요?')) return;
+    setReqType(t);
+    setCart([]);
+    setMajorCat(null);
+    setSubCat(null);
+    setSearch('');
+  };
+
+  // ── 표시할 품목 필터링 ────────────────────────────────────
+  // 추가 모드: 모든 EQUIP_* (마스터)
+  // 폐기 모드: 보유한 EQUIP_* (재고 > 0)
+  const baseItems = useMemo(() => {
+    if (reqType === 'DISPOSAL') return items.filter(i => (stocks[i.id] ?? 0) > 0);
+    return items;
+  }, [items, stocks, reqType]);
+
+  const searchQuery = search.trim().toLowerCase();
+  const hasSearch = searchQuery.length > 0;
+  const matchesSearch = (i: Item) => !hasSearch
+    || i.name.toLowerCase().includes(searchQuery)
+    || (i.item_code ?? '').toLowerCase().includes(searchQuery);
+
+  const visibleItems = useMemo(() => {
+    let pool = baseItems;
+    if (hasSearch) pool = pool.filter(matchesSearch);
+    else if (subCat) pool = pool.filter(i => i.category === subCat);
+    return [...pool].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }, [baseItems, hasSearch, subCat, searchQuery]);
+
+  const currentSubs = EQUIPMENT_HIERARCHY.find(g => g.label === majorCat)?.subs ?? [];
+
+  // ── 카드 클릭 → 모달 열기 ─────────────────────────────────
+  const openAddCart = (item: Item) => {
+    const existing = cart.find(c => c.item_id === item.id);
+    if (existing) {
+      setEditCart({ ...existing });
+      setEditIsNew(false);
+    } else {
+      setEditCart({
+        item_id: item.id,
+        item_name: item.name,
+        item_code: item.item_code,
+        qty: 1,
+        reason: '',
+        attachments: [],
+      });
+      setEditIsNew(true);
+    }
+  };
+
+  const saveCart = () => {
+    if (!editCart) return;
+    if (editCart.qty <= 0) return showMsg('err', '수량은 1 이상이어야 합니다.');
+    if (reqType === 'DISPOSAL' && editCart.attachments.length === 0) {
+      if (!confirm('폐기 신청은 사진 첨부가 권장됩니다. 사진 없이 저장하시겠습니까?')) return;
+    }
+    setCart(prev => {
+      const idx = prev.findIndex(c => c.item_id === editCart.item_id);
+      if (idx >= 0) {
+        const next = [...prev]; next[idx] = editCart; return next;
+      }
+      return [...prev, editCart];
+    });
+    setEditCart(null);
+  };
+
+  const removeFromCart = (item_id: string) => {
+    setCart(prev => prev.filter(c => c.item_id !== item_id));
+  };
+
+  // ── 사진 업로드 (모달 안) ─────────────────────────────────
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editCart) return;
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
+      const newUrls: string[] = [];
       for (const file of Array.from(files)) {
         const fd = new FormData();
         fd.append('file', file);
         const res = await api('/ward-requests/upload-attachment', { method: 'POST', body: fd });
-        setAttachments(prev => [...prev, res.url]);
+        newUrls.push(res.url);
       }
+      setEditCart(prev => prev ? { ...prev, attachments: [...prev.attachments, ...newUrls] } : prev);
     } catch (err: any) { showMsg('err', err.message || '업로드 실패'); }
     finally { setUploading(false); e.target.value = ''; }
   };
 
-  const removeAttachment = async (url: string) => {
-    try {
-      await api('/ward-requests/delete-attachment', { method: 'DELETE', body: JSON.stringify({ url }) });
-    } catch { /* ignore */ }
-    setAttachments(prev => prev.filter(u => u !== url));
+  const removeAttachment = (url: string) => {
+    if (!editCart) return;
+    setEditCart({ ...editCart, attachments: editCart.attachments.filter(u => u !== url) });
+    api('/ward-requests/delete-attachment', { method: 'DELETE', body: JSON.stringify({ url }) }).catch(() => {});
   };
-
-  // 이미지 hover 미리보기 / 확대
-  const [hoverImg, setHoverImg]     = useState<{ url: string; x: number; y: number } | null>(null);
-  const [enlargeImg, setEnlargeImg] = useState<string | null>(null);
-
-  const equipCatValues = EQUIPMENT_CATEGORIES.map(c => c.value);
-
-  // ── 데이터 로드 ───────────────────────────────────────────
-  const load = useCallback(() => {
-    setLoading(true);
-    const p = new URLSearchParams();
-    p.set('type', 'EQUIPMENT');
-    if (filterStatus) p.set('status', filterStatus);
-    api(`/ward-requests?${p}`).then(setRequests).catch(console.error).finally(() => setLoading(false));
-  }, [filterStatus]);
-
-  useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    if (!canCreate) return; // 신청 권한 없으면 품목 로드하지 않음
-    Promise.all([
-      api('/items?is_active=true'),
-      api('/dept-permissions/my-items').catch(() => ({ item_ids: null })),
-    ]).then(([allItems, permData]) => {
-      const item_ids: string[] | null = permData?.item_ids ?? null;
-      const equipItems = allItems.filter((i: any) => equipCatValues.includes(i.category ?? ''));
-      setItems(item_ids && item_ids.length > 0
-        ? equipItems.filter((i: any) => item_ids.includes(i.id))
-        : equipItems);
-    }).catch(() => {});
-  }, [canCreate]);
-
-  // ── 카테고리 드릴다운 ─────────────────────────────────────
-  const clickMajor = (label: string) => {
-    setMajorCat(prev => prev === label ? null : label);
-    setSubCat(null);
-  };
-  const clickSub = (value: string) => {
-    setSubCat(prev => prev === value ? null : value);
-  };
-
-  const currentSubs  = EQUIPMENT_HIERARCHY.find(g => g.label === majorCat)?.subs ?? [];
-  const visibleItems = subCat ? items.filter(i => (i as any).category === subCat) : [];
-
-  const pendingCount = items.filter(i => (qtys[i.id] ?? 0) > 0).length;
 
   // ── 제출 ──────────────────────────────────────────────────
   const handleSubmit = async () => {
-    const itemsToSubmit = items
-      .filter(i => (qtys[i.id] ?? 0) > 0)
-      .map(i => ({ item_id: i.id, requested_qty: qtys[i.id], note: '' }));
-
-    if (itemsToSubmit.length === 0) {
-      showMsg('err', '1개 이상 품목에 수량을 입력해주세요.');
-      return;
-    }
+    if (cart.length === 0) return showMsg('err', '장바구니에 품목이 없습니다.');
     setSubmitting(true);
     try {
+      // 모든 사진 url 모음
+      const allAttachments = Array.from(new Set(cart.flatMap(c => c.attachments)));
+      // 각 item 의 사유와 사진 url을 note 에 JSON 으로 저장
+      const itemsToSubmit = cart.map(c => ({
+        item_id: c.item_id,
+        requested_qty: c.qty,
+        note: JSON.stringify({ reason: c.reason, attachments: c.attachments }),
+      }));
       const created = await api('/ward-requests', {
         method: 'POST',
         body: JSON.stringify({
-          period_type:            'MONTHLY',
-          period_start:           today(),
-          period_end:             today(),
-          is_emergency:           form.is_emergency,
-          request_type:           'EQUIPMENT',
-          equipment_request_type: form.equipment_type || null,
-          note:                   form.reason || null,
-          attachment_urls:        attachments,
+          period_type: 'MONTHLY',
+          period_start: today(),
+          period_end: today(),
+          request_type: 'EQUIPMENT',
+          equipment_request_type: reqType,
+          attachment_urls: allAttachments,
           items: itemsToSubmit,
         }),
       });
       await api(`/ward-requests/${created.id}/submit`, { method: 'POST' });
       showMsg('ok', '비품 신청이 제출되었습니다.');
-      setQtys({});
-      setMajorCat(null);
-      setSubCat(null);
-      setForm({ is_emergency: false, equipment_type: '', reason: '' });
-      setAttachments([]);
+      setCart([]);
+      setMajorCat(null); setSubCat(null); setSearch('');
       setPageTab('list');
-      load();
+      loadList();
+      loadItemsAndStock();
     } catch (e: any) {
       showMsg('err', e.message);
     } finally {
@@ -210,43 +256,40 @@ export default function EquipmentRequestPage() {
     }
   };
 
-  // ── 상세보기 / 취소 ───────────────────────────────────────
+  // ── 신청 상세 ─────────────────────────────────────────────
   const openDetail = async (id: string) => {
-    try { setDetail(await api(`/ward-requests/${id}`)); setModal('detail'); }
-    catch (e: any) { showMsg('err', e.message); }
-  };
-  const cancelRequest = async (id: string) => {
-    if (!confirm('신청을 취소하시겠습니까?')) return;
     try {
-      await api(`/ward-requests/${id}/cancel`, { method: 'POST' });
-      showMsg('ok', '취소되었습니다.'); setModal(null); load();
+      const d = await api(`/ward-requests/${id}`);
+      setDetail(d);
+      setDetailOpen(true);
     } catch (e: any) { showMsg('err', e.message); }
   };
 
+  const cur = REQ_TYPES.find(t => t.value === reqType)!;
+
   return (
     <div>
-      {/* ── 페이지 헤더 ── */}
       <PageHeader
         icon={Monitor}
         title="비품 신청"
-        description={canViewAll ? '전체 비품 신청 현황' : `${user?.department_name} 비품 신청 관리`}
+        description={canViewAll ? '전체 비품 신청 현황 관리' : `${user?.department_name} 비품 신청·이력`}
       />
 
-      {/* ── 탭 바 ── */}
+      {/* 페이지 탭 */}
       <div className="flex border-b border-gray-200 mb-5">
         {canCreate && (
           <button
             onClick={() => setPageTab('create')}
-            className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${pageTab === 'create' ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            className={`inline-flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium border-b-2 ${pageTab === 'create' ? 'border-purple-500 text-purple-700' : 'border-transparent text-gray-500'}`}
           >
-            비품 신청
+            <ClipboardList className="w-4 h-4" />비품 신청
           </button>
         )}
         <button
           onClick={() => setPageTab('list')}
-          className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${pageTab === 'list' ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          className={`inline-flex items-center gap-1.5 px-6 py-2.5 text-sm font-medium border-b-2 ${pageTab === 'list' ? 'border-purple-500 text-purple-700' : 'border-transparent text-gray-500'}`}
         >
-          신청현황
+          <List className="w-4 h-4" />신청현황
         </button>
       </div>
 
@@ -256,287 +299,203 @@ export default function EquipmentRequestPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          비품 신청 탭
-      ══════════════════════════════════════════ */}
+      {/* ============ 비품 신청 탭 ============ */}
       {pageTab === 'create' && canCreate && (
-        <div className="space-y-5">
-          {/* 신청유형 + 사유 + 사진첨부 */}
-          <div className="card p-5 space-y-5">
-            {/* 신청유형 */}
-            <div>
-              <label className="label">신청 유형</label>
-              <div className="flex gap-2">
-                {EQ_TYPES.map(t => {
-                  const isActive = form.equipment_type === t.value;
-                  return (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => setForm(f => ({
-                        ...f,
-                        equipment_type: isActive ? '' : t.value,
-                        reason: isActive ? '' : f.reason,
-                      }))}
-                      className={`px-5 py-2 rounded-lg text-sm font-semibold border transition-all ${
-                        isActive
-                          ? `${t.activeBg} ${t.activeTxt} border-transparent`
-                          : `${t.inactiveBg} ${t.inactiveTxt} ${t.border}`
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
+        <div className="space-y-3">
+          {/* 신청 유형 선택 */}
+          <div className="card p-3 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-500 mr-1">신청 유형</span>
+            <div className="inline-flex gap-2">
+              {REQ_TYPES.map(t => {
+                const isActive = reqType === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    onClick={() => switchType(t.value)}
+                    className={`px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-colors ${isActive ? `${t.color} text-white ${t.border}` : `${t.light} ${t.text} ${t.border}`}`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
             </div>
-
-            {/* 사유 (신청유형 선택 시) */}
-            {form.equipment_type && (
-              <div>
-                <label className="label">사유</label>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {REASON_PRESETS[form.equipment_type]?.map(r => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, reason: f.reason === r ? '' : r }))}
-                      className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                        form.reason === r
-                          ? 'bg-gray-700 text-white border-gray-700'
-                          : 'bg-white text-slate-600 border-gray-300 hover:border-gray-500'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  className="input"
-                  value={form.reason}
-                  onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                  placeholder="직접 입력 가능"
-                />
-              </div>
-            )}
-
-            {/* 사진 첨부 */}
-            <div>
-              <label className="label">사진 첨부</label>
-              <div className="flex flex-wrap gap-2 items-start">
-                {attachments.map((url, idx) => (
-                  <div key={idx} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-gray-200">
-                    <img
-                      src={url}
-                      alt=""
-                      className="w-full h-full object-cover cursor-pointer"
-                      onClick={() => setEnlargeImg(url)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(url)}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/60 text-white rounded-full text-xs leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                ))}
-                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors">
-                  <span className="text-xl text-slate-400">+</span>
-                  <span className="text-[10px] text-slate-400">{uploading ? '업로드중' : '사진추가'}</span>
-                  <input type="file" accept="image/*" multiple onChange={handleFileUpload} className="hidden" disabled={uploading} />
-                </label>
-              </div>
-            </div>
-
+            <span className="text-xs text-slate-500 ml-2">{cur.desc}</span>
+            <span className="ml-auto text-xs text-slate-500">
+              {reqType === 'DISPOSAL' ? '보유 비품' : '신청 가능 품목'} <b>{baseItems.length}</b>개
+            </span>
           </div>
 
-          {/* 카테고리 드릴다운 */}
-          <div className="card p-5 space-y-3">
-            {/* 대분류 */}
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">대분류</p>
-              <div className="flex gap-2 flex-wrap">
+          {/* 검색 */}
+          <div className="card p-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="비품명 또는 코드 검색"
+                className="input w-full pl-9 pr-24 text-sm"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-0.5">
+                  <XCircle className="w-3.5 h-3.5" />지우기
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 사이드바 + 카드 */}
+          <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-3 items-start">
+            {!hasSearch && (
+              <aside className="card p-3 space-y-2 md:sticky md:top-4 md:max-h-[calc(100vh-100px)] md:overflow-y-auto">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">카테고리</p>
                 {EQUIPMENT_HIERARCHY.map(g => {
-                  const totalCount = g.subs.reduce((acc, s) => acc + items.filter(i => (i as any).category === s.value).length, 0);
-                  const isActive   = majorCat === g.label;
-                  const isEmpty    = totalCount === 0;
+                  const totalCount = g.subs.reduce((acc, s) => acc + baseItems.filter(i => i.category === s.value).length, 0);
+                  if (totalCount === 0) return null;
+                  const isActive = majorCat === g.label;
                   return (
-                    <button
-                      key={g.label}
-                      onClick={() => !isEmpty && clickMajor(g.label)}
-                      disabled={isEmpty}
-                      className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
-                      style={{
-                        background: isActive ? '#7c3aed' : '#f1f5f9',
-                        color: isActive ? 'white' : isEmpty ? '#94a3b8' : '#475569',
-                        opacity: isEmpty ? 0.4 : 1,
-                        cursor: isEmpty ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {g.label}
-                      <span className="ml-1.5 text-xs opacity-70">({totalCount})</span>
-                    </button>
+                    <div key={g.label}>
+                      <button
+                        onClick={() => { setMajorCat(prev => prev === g.label ? null : g.label); setSubCat(null); }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-purple-50 text-purple-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                      >
+                        {g.label}
+                        <span className="ml-1 text-[10px] text-slate-400">({totalCount})</span>
+                      </button>
+                      <div className="mt-1 ml-2 space-y-0.5">
+                        {g.subs.map(s => {
+                          const cnt = baseItems.filter(i => i.category === s.value).length;
+                          if (cnt === 0) return null;
+                          const isSub = subCat === s.value;
+                          return (
+                            <button
+                              key={s.value}
+                              onClick={() => setSubCat(prev => prev === s.value ? null : s.value)}
+                              className={`w-full text-left px-2 py-1 rounded text-xs ${isSub ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                              {s.label}
+                              <span className={`ml-1 text-[10px] ${isSub ? 'text-purple-100' : 'text-slate-400'}`}>({cnt})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
-              </div>
-            </div>
+                {(majorCat || subCat) && (
+                  <button onClick={() => { setMajorCat(null); setSubCat(null); }} className="w-full text-left px-2 py-1 rounded text-xs text-slate-400 hover:text-slate-600 mt-2 border-t border-gray-100 pt-2">
+                    ↺ 전체 보기
+                  </button>
+                )}
+              </aside>
+            )}
 
-            {/* 중분류 (대분류 선택 시) */}
-            {majorCat && currentSubs.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">중분류</p>
-                <div className="flex gap-2 flex-wrap">
-                  {currentSubs.map(s => {
-                    const cnt      = items.filter(i => (i as any).category === s.value).length;
-                    const isActive = subCat === s.value;
-                    const isEmpty  = cnt === 0;
+            <div className="card p-3 min-h-[200px]" style={hasSearch ? { gridColumn: '1 / -1' } : undefined}>
+              {visibleItems.length === 0 ? (
+                <EmptyState message={
+                  hasSearch ? '검색 결과가 없습니다'
+                    : reqType === 'DISPOSAL' ? '보유 중인 비품이 없습니다.'
+                    : '신청 가능한 비품이 없습니다.'
+                } />
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                  {visibleItems.map(item => {
+                    const inCart = cart.find(c => c.item_id === item.id);
+                    const stock = stocks[item.id] ?? 0;
                     return (
                       <button
-                        key={s.value}
-                        onClick={() => !isEmpty && clickSub(s.value)}
-                        disabled={isEmpty}
-                        className="px-4 py-1.5 rounded-full text-sm font-medium border transition-all"
-                        style={{
-                          background:  isActive ? '#7c3aed' : 'white',
-                          color:       isActive ? 'white' : isEmpty ? '#94a3b8' : '#7c3aed',
-                          borderColor: isActive ? '#7c3aed' : isEmpty ? '#e2e8f0' : '#7c3aed',
-                          opacity:     isEmpty ? 0.4 : 1,
-                          cursor:      isEmpty ? 'not-allowed' : 'pointer',
-                        }}
+                        key={item.id}
+                        onClick={() => openAddCart(item)}
+                        className={`text-left border-2 rounded-xl p-2.5 flex flex-col gap-2 transition ${inCart ? `${cur.border} ${cur.light}` : 'border-gray-200 bg-white hover:border-gray-400'}`}
                       >
-                        {s.label}
-                        <span className="ml-1.5 text-xs opacity-75">({cnt})</span>
+                        <div className="aspect-square w-full bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
+                          {item.image_url ? (
+                            <img src={item.image_url} alt={item.name} loading="lazy" className="w-full h-full object-contain" />
+                          ) : (
+                            <div className="flex flex-col items-center text-slate-300">
+                              <ImageIcon className="w-8 h-8" />
+                              <span className="text-[9px] mt-1">이미지 준비 중</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-h-[2.5rem]">
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{item.item_code}</p>
+                          <p className="text-xs font-medium text-slate-800 line-clamp-2 leading-tight">{item.name}</p>
+                        </div>
+                        <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                          {reqType === 'DISPOSAL' && (
+                            <span>보유 <b className="text-slate-700">{fmt(stock)}</b></span>
+                          )}
+                          {inCart && (
+                            <span className={`ml-auto text-[10px] font-semibold ${cur.text}`}>장바구니 {inCart.qty}개</span>
+                          )}
+                        </div>
+                        <div className={`mt-auto text-center py-1 rounded text-xs font-semibold ${inCart ? `${cur.color} text-white` : `${cur.light} ${cur.text}`}`}>
+                          {inCart ? '✓ 수정' : `+ ${cur.label.replace(' 신청', '')}`}
+                        </div>
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* 품목 테이블 */}
-          <div className="card p-0 overflow-hidden">
-            {!majorCat ? (
-              <div className="text-center py-14 text-slate-400 text-sm">
-                위에서 대분류를 선택하세요
-              </div>
-            ) : !subCat ? (
-              <div className="text-center py-14 text-slate-400 text-sm">
-                중분류를 선택하면 품목이 표시됩니다
-              </div>
-            ) : visibleItems.length === 0 ? (
-              <div className="text-center py-14 text-slate-400 text-sm">
-                해당 분류의 품목이 없습니다
-              </div>
-            ) : (
-              <div className="overflow-x-auto" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                <table className="tbl">
-                  <thead className="sticky top-0 bg-white z-10">
-                    <tr>
-                      <th>품목코드</th>
-                      <th>품목명</th>
-                      <th>단위</th>
-                      <th className="text-right">현재재고</th>
-                      <th className="text-right">신청수량</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleItems.map(item => {
-                      const qty    = qtys[item.id] ?? 0;
-                      const hasQty = qty > 0;
-                      return (
-                        <tr key={item.id} className={hasQty ? 'bg-purple-50/60' : ''}>
-                          <td className="font-mono text-xs text-slate-400">{item.item_code}</td>
-                          <td
-                            className="font-medium text-sm"
-                            style={item.image_url ? { cursor: 'pointer' } : {}}
-                            onMouseEnter={item.image_url ? (e) => {
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              setHoverImg({ url: item.image_url!, x: rect.right + 10, y: rect.top });
-                            } : undefined}
-                            onMouseLeave={() => setHoverImg(null)}
-                            onClick={item.image_url ? () => { setHoverImg(null); setEnlargeImg(item.image_url!); } : undefined}
-                          >
-                            {item.image_url && <span className="inline-block w-1.5 h-1.5 bg-purple-400 rounded-full mr-1.5 align-middle" />}
-                            {item.name}
-                          </td>
-                          <td className="text-xs text-slate-500">{item.uom}</td>
-                          <td className="text-right text-sm">
-                            <span className={(item.on_hand_qty ?? 0) === 0 ? 'text-red-400' : 'text-slate-600'}>
-                              {item.on_hand_qty ?? 0}
-                            </span>
-                          </td>
-                          <td className="text-right">
-                            <input
-                              type="number" min="0"
-                              value={qty === 0 ? '' : qty}
-                              placeholder="0"
-                              onKeyDown={focusNextRowInput}
-                              onChange={e => {
-                                const v = Number(e.target.value);
-                                setQtys(prev => ({ ...prev, [item.id]: v < 0 ? 0 : v }));
-                              }}
-                              className="input w-20 text-right"
-                              style={hasQty ? { borderColor: '#7c3aed', background: '#faf5ff' } : {}}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* 하단 요약 + 제출 */}
-          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-200">
-            <span className="text-sm text-slate-500">
-              신청 예정:&nbsp;
-              <span className="font-semibold text-purple-600">{pendingCount}건</span>
-              {pendingCount > 0 && (
-                <button
-                  onClick={() => setQtys({})}
-                  className="ml-3 text-xs text-slate-400 hover:text-red-500 underline"
-                >
-                  전체 초기화
-                </button>
               )}
-            </span>
+            </div>
+          </div>
+
+          {/* 하단 sticky 장바구니 + 제출 */}
+          <div className="sticky bottom-0 z-20 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)] flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-xl border border-gray-200">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+              <span className={`px-2 py-0.5 rounded ${cur.color} text-white text-xs font-semibold`}>{cur.label}</span>
+              <span className="text-sm text-gray-500 inline-flex items-center gap-2">
+                장바구니 <span className={`font-semibold ${cur.text}`}>{cart.length}건</span>
+                {cart.length > 0 && (
+                  <button onClick={() => { if (confirm('장바구니를 비우시겠습니까?')) setCart([]); }} className="ml-2 text-xs text-gray-400 hover:text-red-500 underline inline-flex items-center gap-0.5">
+                    <RotateCcw className="w-3 h-3" />초기화
+                  </button>
+                )}
+              </span>
+              {cart.length > 0 && (
+                <div className="flex flex-wrap gap-1 ml-2 max-w-full overflow-x-auto">
+                  {cart.map(c => (
+                    <span key={c.item_id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[11px] text-slate-700">
+                      {c.item_name}({c.qty})
+                      {c.attachments.length > 0 && <Camera className="w-3 h-3 text-slate-500" />}
+                      <button onClick={() => removeFromCart(c.item_id)} className="text-slate-400 hover:text-red-500">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={handleSubmit}
-              disabled={submitting || pendingCount === 0}
-              className="btn-primary"
+              disabled={submitting || cart.length === 0}
+              className="btn-primary inline-flex items-center gap-1.5"
             >
-              {submitting ? '처리 중...' : '신청 제출'}
+              <Send className="w-4 h-4" />{submitting ? '제출 중...' : `신청 제출 (${cart.length}건)`}
             </button>
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          신청현황 탭
-      ══════════════════════════════════════════ */}
+      {/* ============ 신청현황 탭 ============ */}
       {pageTab === 'list' && (
         <>
-          <div className="flex justify-end mb-3">
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="input w-36 text-sm">
-              <option value="">전체 상태</option>
-              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div className="card p-0 overflow-hidden overflow-x-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-16 text-slate-400 text-sm">로딩 중...</div>
-            ) : requests.length === 0 ? (
-              <div className="flex items-center justify-center py-16 text-slate-400 text-sm">비품 신청 내역이 없습니다.</div>
-            ) : (
+          <FilterBar
+            filters={[{
+              key: 'status', label: '전체 상태', value: filterStatus, onChange: setFilterStatus,
+              options: Object.entries(STATUS_LABEL).map(([k, v]) => ({ value: k, label: v })),
+            }]}
+            onReset={() => setFilterStatus('')}
+          />
+          <div className="card p-0 overflow-auto">
+            {loadingList ? <EmptyState message="로딩 중..." />
+              : requests.length === 0 ? <EmptyState message="신청 내역이 없습니다." />
+              : (
               <table className="tbl">
                 <thead>
                   <tr>
                     <th>신청번호</th>
                     {canViewAll && <th>부서</th>}
+                    <th>유형</th>
                     <th>품목수</th>
                     <th>상태</th>
                     <th>제출일</th>
@@ -546,23 +505,22 @@ export default function EquipmentRequestPage() {
                 <tbody>
                   {requests.map(r => (
                     <tr key={r.id}>
-                      <td className="font-medium text-accent-600">{r.request_no}</td>
+                      <td className="font-medium text-purple-600">{r.request_no}</td>
                       {canViewAll && <td className="text-xs">{r.department_name}</td>}
-                      <td>{r.items?.length ?? 0}건</td>
                       <td>
-                        {(r as any).equipment_request_type && (
-                          <span className={`${EQ_TYPE_BADGE[(r as any).equipment_request_type] ?? 'badge-gray'} mr-1`}>
-                            {EQ_TYPE_LABEL[(r as any).equipment_request_type] ?? (r as any).equipment_request_type}
-                          </span>
-                        )}
-                        {r.is_emergency && <span className="badge-red mr-1">긴급</span>}
-                        <span className={STATUS_CLS[r.status] || 'badge-gray'}>{STATUS_LABEL[r.status] || r.status}</span>
+                        {(r as any).equipment_request_type === 'DISPOSAL'
+                          ? <span className="badge-red">폐기</span>
+                          : (r as any).equipment_request_type === 'ADDITION'
+                          ? <span className="badge-blue">추가</span>
+                          : <span className="badge-gray">-</span>}
                       </td>
-                      <td className="text-xs text-slate-400">
-                        {r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('ko-KR') : '-'}
-                      </td>
+                      <td>{r.items?.length ?? (r as any).item_count ?? 0}건</td>
+                      <td><span className={STATUS_CLS[r.status] || 'badge-gray'}>{STATUS_LABEL[r.status] || r.status}</span></td>
+                      <td className="text-xs text-gray-400">{r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('ko-KR') : '-'}</td>
                       <td>
-                        <button onClick={() => openDetail(r.id)} className="text-xs text-accent-600 hover:underline">상세보기</button>
+                        <button onClick={() => openDetail(r.id)} className="btn-ghost text-xs py-1 px-2 text-purple-600 inline-flex items-center gap-0.5">
+                          <Eye className="w-3.5 h-3.5" />상세
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -573,129 +531,143 @@ export default function EquipmentRequestPage() {
         </>
       )}
 
-      {/* 상세보기 모달 */}
-      {modal === 'detail' && detail && (
-        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
-          <div className="modal w-full max-w-3xl">
-            <div className="modal-header">
+      {/* ===== 카드 클릭 시 신청 모달 ===== */}
+      <Modal
+        open={editCart !== null}
+        onClose={() => setEditCart(null)}
+        title={editCart ? `${cur.label} — ${editCart.item_name}` : ''}
+        size="md"
+        footer={editCart && (
+          <>
+            {!editIsNew && (
+              <button onClick={() => { removeFromCart(editCart.item_id); setEditCart(null); }} className="btn-secondary text-red-600 mr-auto inline-flex items-center gap-1">
+                <Trash2 className="w-4 h-4" />장바구니에서 제거
+              </button>
+            )}
+            <button onClick={() => setEditCart(null)} className="btn-secondary">취소</button>
+            <button onClick={saveCart} className="btn-primary inline-flex items-center gap-1">
+              <Plus className="w-4 h-4" />{editIsNew ? '장바구니 담기' : '수정 저장'}
+            </button>
+          </>
+        )}
+      >
+        {editCart && (
+          <div className="space-y-4">
+            {/* 수량 (폐기는 1로 고정 가능, 추가는 자유) */}
+            {reqType === 'ADDITION' && (
               <div>
-                <h2 className="modal-title">{detail.request_no}</h2>
-                <div className="flex items-center gap-2 mt-1">
-                  {(detail as any).equipment_request_type && (
-                    <span className={EQ_TYPE_BADGE[(detail as any).equipment_request_type] ?? 'badge-gray'}>
-                      {EQ_TYPE_LABEL[(detail as any).equipment_request_type] ?? (detail as any).equipment_request_type}
-                    </span>
-                  )}
-                  {detail.is_emergency && <span className="badge-red">긴급</span>}
-                  <span className={STATUS_CLS[detail.status] || 'badge-gray'}>{STATUS_LABEL[detail.status] || detail.status}</span>
-                  <span className="text-xs text-slate-400">{detail.department_name}</span>
+                <label className="text-sm font-semibold text-slate-700 mb-1.5 block">신청 수량</label>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setEditCart(p => p ? { ...p, qty: Math.max(1, p.qty - 1) } : p)} className="w-8 h-8 rounded-md border border-gray-200">−</button>
+                  <input type="number" min="1" value={editCart.qty} onChange={e => setEditCart(p => p ? { ...p, qty: Math.max(1, Number(e.target.value) || 1) } : p)} className="input w-20 text-center" />
+                  <button onClick={() => setEditCart(p => p ? { ...p, qty: p.qty + 1 } : p)} className="w-8 h-8 rounded-md border border-gray-200">+</button>
                 </div>
               </div>
-              <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+            )}
+            {reqType === 'DISPOSAL' && (
+              <div className="bg-slate-50 rounded-lg p-3 text-sm flex items-center justify-between">
+                <span className="text-slate-600">보유 수량</span>
+                <span className="font-semibold text-slate-800">{fmt(stocks[editCart.item_id])} 개</span>
+              </div>
+            )}
+
+            {/* 사유 */}
+            <div>
+              <label className="text-sm font-semibold text-slate-700 mb-1.5 block">사유</label>
+              <select
+                value={editCart.reason}
+                onChange={e => setEditCart(p => p ? { ...p, reason: e.target.value } : p)}
+                className="input w-full text-sm mb-2"
+              >
+                <option value="">— 사유 선택 —</option>
+                {(REASON_PRESETS[reqType] ?? []).map(r => <option key={r} value={r}>{r}</option>)}
+                <option value="기타 (직접 입력)">기타 (직접 입력)</option>
+              </select>
+              {editCart.reason === '기타 (직접 입력)' && (
+                <input
+                  type="text"
+                  placeholder="사유를 입력하세요"
+                  onChange={e => setEditCart(p => p ? { ...p, reason: e.target.value || '기타 (직접 입력)' } : p)}
+                  className="input w-full text-sm"
+                />
+              )}
             </div>
-            <div className="modal-body">
-              {/* 신청유형 + 사유 */}
-              {((detail as any).equipment_request_type || (detail as any).note) && (
-                <div className="mb-4 p-3 bg-purple-50 rounded-lg text-sm border border-purple-100">
-                  {(detail as any).equipment_request_type && (
-                    <span className={`${EQ_TYPE_BADGE[(detail as any).equipment_request_type] ?? 'badge-gray'} mr-2`}>
-                      {EQ_TYPE_LABEL[(detail as any).equipment_request_type] ?? (detail as any).equipment_request_type}
-                    </span>
-                  )}
-                  {(detail as any).note && (
-                    <span className="text-slate-700">
-                      <span className="font-medium text-slate-800">사유: </span>{(detail as any).note}
-                    </span>
-                  )}
-                </div>
-              )}
-              {detail.last_action && (
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
-                  <span className="font-medium">{detail.last_action.approver_name}</span>
-                  <span className="text-slate-500 mx-1">·</span>
-                  <span className="text-slate-600">{detail.last_action.action}</span>
-                  {detail.last_action.reason && <span className="text-slate-500 ml-2">— {detail.last_action.reason}</span>}
-                </div>
-              )}
-              {/* 첨부사진 */}
-              {(detail as any).attachment_urls?.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-medium text-slate-500 mb-2">첨부사진</p>
-                  <div className="flex flex-wrap gap-2">
-                    {(detail as any).attachment_urls.map((url: string, idx: number) => (
-                      <img
-                        key={idx}
-                        src={url}
-                        alt=""
-                        className="w-20 h-20 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80"
-                        onClick={() => setEnlargeImg(url)}
-                      />
-                    ))}
+
+            {/* 사진 첨부 */}
+            <div>
+              <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
+                사진 첨부 {reqType === 'DISPOSAL' && <span className="text-xs text-red-500">(권장)</span>}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {editCart.attachments.map(url => (
+                  <div key={url} className="relative group w-20 h-20 rounded-lg border border-gray-200 overflow-hidden bg-slate-50">
+                    <img src={url} className="w-full h-full object-contain" />
+                    <button
+                      onClick={() => removeAttachment(url)}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/60 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 flex items-center justify-center"
+                    >×</button>
                   </div>
-                </div>
-              )}
-              <div className="overflow-x-auto rounded-xl border border-gray-200">
-                <table className="tbl">
-                  <thead>
-                    <tr>
-                      <th>품목명</th>
-                      <th className="text-right">신청수량</th>
-                      <th className="text-right">승인수량</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.items?.map(item => (
-                      <tr key={item.id || item.item_id}>
-                        <td>
-                          <div className="font-medium text-sm">{item.item_name}</div>
-                          <div className="text-xs text-slate-400">{item.item_code} · {item.uom}</div>
-                        </td>
-                        <td className="text-right font-medium">{item.requested_qty}</td>
-                        <td className="text-right">
-                          {item.approved_qty !== undefined && item.approved_qty !== null
-                            ? <span className="font-medium text-green-600">{item.approved_qty}</span>
-                            : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                ))}
+                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-50">
+                  <Camera className="w-5 h-5 text-gray-400" />
+                  <span className="text-[10px] text-gray-500 mt-1">{uploading ? '업로드' : '사진 추가'}</span>
+                  <input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} className="hidden" />
+                </label>
               </div>
-            </div>
-            <div className="modal-footer">
-              {canCreate && detail.status === 'DRAFT' && (
-                <button onClick={() => cancelRequest(detail.id)} className="btn-danger mr-auto">취소</button>
-              )}
-              <button onClick={() => setModal(null)} className="btn-secondary">닫기</button>
             </div>
           </div>
-        </div>
-      )}
-      {/* 이미지 hover 미리보기 (fixed 오버레이) */}
-      {hoverImg && (
-        <div
-          className="fixed z-50 pointer-events-none rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
-          style={{ left: hoverImg.x, top: hoverImg.y, width: 160, height: 160 }}
-        >
-          <img src={hoverImg.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-        </div>
-      )}
+        )}
+      </Modal>
 
-      {/* 이미지 확대 모달 */}
-      {enlargeImg && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-          onClick={() => setEnlargeImg(null)}
-        >
-          <img
-            src={enlargeImg}
-            alt=""
-            loading="lazy"
-            className="max-w-[80vw] max-h-[80vh] rounded-xl shadow-2xl object-contain"
-            onClick={e => e.stopPropagation()}
-          />
-        </div>
-      )}
+      {/* ===== 상세 보기 모달 ===== */}
+      <Modal
+        open={detailOpen && detail !== null}
+        onClose={() => setDetailOpen(false)}
+        title={detail?.request_no ?? '상세'}
+        size="lg"
+        footer={<button onClick={() => setDetailOpen(false)} className="btn-secondary">닫기</button>}
+      >
+        {detail && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-3">
+              {(detail as any).equipment_request_type === 'DISPOSAL' && <span className="badge-red">폐기</span>}
+              {(detail as any).equipment_request_type === 'ADDITION' && <span className="badge-blue">추가</span>}
+              <span className={STATUS_CLS[detail.status] || 'badge-gray'}>{STATUS_LABEL[detail.status]}</span>
+              <span className="text-xs text-gray-400">{detail.department_name}</span>
+            </div>
+            <table className="tbl">
+              <thead>
+                <tr><th>품목</th><th className="text-right">수량</th><th>사유</th><th>사진</th></tr>
+              </thead>
+              <tbody>
+                {detail.items?.map((it: any) => {
+                  let parsed: any = {};
+                  try { parsed = JSON.parse(it.note ?? '{}'); } catch { parsed = { reason: it.note }; }
+                  return (
+                    <tr key={it.id || it.item_id}>
+                      <td>
+                        <div className="font-medium text-sm">{it.item_name}</div>
+                        <div className="text-[10px] text-gray-400">{it.item_code}</div>
+                      </td>
+                      <td className="text-right">{it.requested_qty}</td>
+                      <td className="text-xs">{parsed.reason || '-'}</td>
+                      <td>
+                        {parsed.attachments?.length > 0 ? (
+                          <div className="flex gap-1">
+                            {parsed.attachments.map((u: string, i: number) => (
+                              <img key={i} src={u} className="w-12 h-12 object-cover rounded border border-gray-200" />
+                            ))}
+                          </div>
+                        ) : <span className="text-xs text-gray-300">-</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

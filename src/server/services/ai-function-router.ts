@@ -564,32 +564,7 @@ export async function executeConfirmedAction(actionId: string, userId: string): 
       }
 
       case 'usage_register': {
-        // 사용 등록 — raw SQLite usage_records 테이블 사용
-        const dept = await findDepartment(params.department);
-
-        const resolvedItems: { item_id: string; qty: number; name: string }[] = [];
-        for (const pi of (params.items || [])) {
-          const item = await findItem(pi.name);
-          if (!item) return { success: false, message: `"${pi.name}" 품목을 찾을 수 없습니다.` };
-          resolvedItems.push({ item_id: item.id, qty: pi.quantity, name: item.name });
-        }
-
-        if (!resolvedItems.length) {
-          return { success: false, message: '등록할 품목이 없습니다.' };
-        }
-
-        // usage_records에 직접 INSERT
-        for (const ri of resolvedItems) {
-          const id = require('uuid').v4();
-          await prisma.$executeRawUnsafe(
-            `INSERT INTO usage_records (id, department_id, item_id, used_qty, used_at, note, created_by, created_at, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'), 'AI 어시스턴트 등록', ?, datetime('now'), datetime('now'))`,
-            id, dept?.id || '', ri.item_id, ri.qty, userId
-          );
-        }
-
-        const summary = resolvedItems.map(ri => `${ri.name} ${ri.qty}`).join(', ');
-        return { success: true, message: `사용 등록 완료! ${summary}` };
+        return { success: false, message: '사용 등록 기능은 폐지되었습니다. 환자별 사용 추적은 환자관리의 처치 등록 또는 신청 화면에서 처리하세요.' };
       }
 
       case 'usage_remaining': {

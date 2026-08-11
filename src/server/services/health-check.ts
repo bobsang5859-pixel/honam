@@ -43,6 +43,7 @@ export async function runHealthChecks(scope: 'critical' | 'all'): Promise<Health
       alerts.push(...await checkOpenFollowUps());
       alerts.push(...await checkDuplicateRequests());
       alerts.push(...await checkUnassignedPatients());
+      alerts.push(...await checkRecentLoans());
     }
   } catch (e) {
     console.error('[HealthCheck] Error during checks:', e);
@@ -111,8 +112,8 @@ async function checkCapacityExceeded(): Promise<HealthAlert[]> {
 async function checkInventoryDrift(): Promise<HealthAlert[]> {
   const alerts: HealthAlert[] = [];
   try {
+    // Inventory 모델에는 deleted_at 컬럼이 없음 (단일 (item, location) 집계 행) — 필터 제거
     const inventories = await (prisma as any).inventory.findMany({
-      where: { deleted_at: null },
       select: { id: true, item_id: true, location_id: true, on_hand_qty: true, item: { select: { name: true } } },
     });
     for (const inv of inventories) {
@@ -487,5 +488,37 @@ async function checkUnassignedPatients(): Promise<HealthAlert[]> {
       });
     }
   } catch (e) { console.error('[HealthCheck] checkUnassignedPatients error:', e); }
+  return alerts;
+}
+
+// 최근 부서간 대여 (24시간 내) — 총무구매가 인지해야 하므로 info 알림
+async function checkRecentLoans(): Promise<HealthAlert[]> {
+  const alerts: HealthAlert[] = [];
+  try {
+    const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const rows: any[] = await (prisma as any).$queryRawUnsafe(
+      `SELECT l.id, l.from_department_id, l.to_department_id, l.item_id, l.qty, l.loaned_at,
+              f.name AS from_name, t.name AS to_name, i.name AS item_name
+       FROM department_loans l
+       LEFT JOIN departments f ON f.id = l.from_department_id
+       LEFT JOIN departments t ON t.id = l.to_department_id
+       LEFT JOIN items i ON i.id = l.item_id
+       WHERE l.deleted_at IS NULL AND l.status = 'ACTIVE' AND l.loaned_at >= ?
+       ORDER BY l.loaned_at DESC`,
+      cutoff,
+    );
+    for (const r of rows) {
+      alerts.push({
+        id: `LOAN_RECENT_${r.id}`,
+        severity: 'info',
+        title: `부서 대여 — ${r.from_name ?? ''} → ${r.to_name ?? ''}`,
+        description: `${r.item_name ?? ''} ${Number(r.qty)}개 (${new Date(r.loaned_at).toLocaleString('ko-KR')})`,
+        entity_type: 'loan',
+        entity_id: String(r.id),
+        link: '/loans',
+        detected_at: new Date().toISOString(),
+      });
+    }
+  } catch (e) { console.error('[HealthCheck] checkRecentLoans error:', e); }
   return alerts;
 }

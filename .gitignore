@@ -5,9 +5,18 @@ dist/
 *.db-journal
 *.db-wal
 *.db-shm
+*.db.backup-*
+*.db.bak-*
 .DS_Store
 Thumbs.db
 node_modules
+
+# runtime-generated output, not source
+generated/
+.claude/scheduled_tasks.lock
+
+# 환자 개인정보(PHI) 포함 파일 — 절대 커밋 금지
+전체 병실현황.xlsx
 
 # Python (ai-server)
 __pycache__/

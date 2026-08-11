@@ -145,8 +145,17 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     const event = await prisma.deptCalendarEvent.findUnique({ where: { id } });
     if (!event) return res.status(404).json({ error: '일정을 찾을 수 없습니다.' });
 
-    const isMine = event.created_by === userId || event.department_id === req.user?.department_id;
-    if (!isMine && !isAdmin) return res.status(403).json({ error: '삭제 권한이 없습니다.' });
+    const isCreator = event.created_by === userId;
+    const isSameDept = event.department_id === req.user?.department_id;
+    const visibility = (event as any).visibility ?? 'DEPARTMENT';
+
+    // PRIVATE 일정은 작성자(또는 관리자)만 삭제 가능
+    // 그 외 일정은 작성자 또는 같은 부서원(또는 관리자)이 삭제 가능
+    const canDelete = visibility === 'PRIVATE'
+      ? (isCreator || isAdmin)
+      : (isCreator || isSameDept || isAdmin);
+
+    if (!canDelete) return res.status(403).json({ error: '삭제 권한이 없습니다.' });
 
     await prisma.deptCalendarEvent.delete({ where: { id } });
     res.json({ ok: true });

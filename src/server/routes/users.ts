@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../index';
 import { authMiddleware, requirePermission, AuthRequest } from '../middleware/auth';
 import { audit } from '../utils/audit';
+import { PERM_HIERARCHY } from '../../shared/permissions';
 
 const router = Router();
 router.use(authMiddleware);
@@ -68,12 +69,23 @@ router.post('/', requirePermission('SYSTEM_ADMIN'), async (req: AuthRequest, res
   if (!username || !password || !display_name) return res.status(400).json({ error: '필수 항목을 입력하세요.' });
   try {
     const hash = await bcrypt.hash(password, 10);
+
+    // 부서 소속 신규 사용자에게 부서원 기본 권한 자동 부여
+    // — UI는 개별 권한(하위 키) 모델을 사용하므로 묶음 키(REQUEST_USE) 대신 하위 4개를 직접 추가
+    // — ALL_DEPT_COMMON 메뉴 그룹이 요구하는 최소 권한
+    const baseDirectPerms = Array.isArray(direct_permissions) ? [...direct_permissions] : [];
+    if (department_id) {
+      const requestUseChildren = PERM_HIERARCHY['REQUEST_USE'] ?? [];
+      for (const k of requestUseChildren) {
+        if (!baseDirectPerms.includes(k)) baseDirectPerms.push(k);
+      }
+    }
+
     const user = await prisma.user.create({
       data: {
         id: uuidv4(), username, password_hash: hash, display_name,
         department_id: department_id || null,
-        direct_permissions: Array.isArray(direct_permissions) && direct_permissions.length > 0
-          ? JSON.stringify(direct_permissions) : null,
+        direct_permissions: baseDirectPerms.length > 0 ? JSON.stringify(baseDirectPerms) : null,
       },
     });
     // Support both role_ids (array of IDs) and role_names (array of names)

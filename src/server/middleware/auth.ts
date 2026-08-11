@@ -1,6 +1,7 @@
 ﻿import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../index';
+import { hasAnyPermission as sharedHasAnyPermission } from '../../shared/permissions';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -30,38 +31,11 @@ export function isCustomMenuUser(user?: AuthRequest['user']): boolean {
   return user.menu_permissions !== null && user.menu_permissions !== undefined;
 }
 
-// 상위 권한 → 하위 권한 매핑 (상위 권한 보유 시 하위 모두 허용)
-const PERM_HIERARCHY: Record<string, string[]> = {
-  BASIC_MANAGE: ['ITEM_MANAGE', 'VENDOR_MANAGE', 'BASELINE_MANAGE', 'SCHEDULE_MANAGE', 'AUDIT_VIEW'],
-  REQUEST_USE: ['REQUEST_CREATE', 'USAGE_MANAGE', 'LOAN_MANAGE', 'RECEIPT_CHECK_VIEW'],
-  PURCHASE_MANAGE: ['APPROVAL_MANAGE', 'PO_MANAGE', 'STOCK_IN_MANAGE', 'STOCK_OUT_MANAGE', 'INVENTORY_MANAGE'],
-  STATS_VIEW: ['COST_VIEW', 'SUPPLY_ANALYTICS_VIEW', 'DEMAND_FORECAST_VIEW'],
-  PATIENT_MANAGE: ['PATIENT_VIEW', 'PATIENT_STATS_VIEW'],
-};
-
-// 역방향: 하위 권한 → 상위 권한
-const PERM_PARENT: Record<string, string> = {};
-for (const [parent, children] of Object.entries(PERM_HIERARCHY)) {
-  for (const child of children) {
-    PERM_PARENT[child] = parent;
-  }
-}
+// PERM_HIERARCHY는 src/shared/permissions.ts에서 단일 정의 후 import (서버·클라이언트 동기화)
 
 function hasAnyPermission(user: AuthRequest['user'], perms: string[]): boolean {
   if (!user) return false;
-  if (user.permissions.includes('SYSTEM_ADMIN')) return true;
-
-  for (const required of perms) {
-    // 직접 보유
-    if (user.permissions.includes(required)) return true;
-    // 상위 권한으로 커버
-    const children = PERM_HIERARCHY[required];
-    if (children && user.permissions.some(p => children.includes(p))) return true;
-    // 하위 권한인데 상위를 보유
-    const parent = PERM_PARENT[required];
-    if (parent && user.permissions.includes(parent)) return true;
-  }
-  return false;
+  return sharedHasAnyPermission(user.permissions, perms);
 }
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {

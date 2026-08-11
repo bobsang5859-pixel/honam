@@ -181,11 +181,11 @@ export default function ReceiptCheckPage() {
     try {
       await saveReceiptDraft(true, true);
       const result: StockOutReceiptConfirmResponse = await api(`/receipt-check/${receiptDetail.id}/confirm`, { method: 'POST' });
-      const refreshed: StockOutReceiptDetail = await api(`/receipt-check/${receiptDetail.id}`);
-      setReceiptDetail(refreshed);
-      await loadFollowUps(refreshed.id);
       loadQueue();
       showMsg('ok', result.follow_up_count > 0 ? `검수확정 완료 (후속작업 ${fmt(result.follow_up_count)}건 생성)` : '검수확정 완료');
+      // 확정 완료 후 모달 닫기 (목록으로 복귀)
+      setReceiptModalOpen(false);
+      setReceiptDetail(null);
     } catch (e: any) {
       showMsg('err', e?.message || '검수확정 실패');
     } finally {

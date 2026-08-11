@@ -157,6 +157,51 @@ router.get('/ward-summary', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /recent-issues — 품목×부서 조합별 불출 이력 전체 (벌크)
+ * body: { item_ids: string[], department_ids: string[] }
+ * 승인 매트릭스에서 "이 품목을 이 부서에 마지막으로 언제 줬는지" 를 셀 단위로 조회할 때 사용.
+ * 반환: { "item_id|department_id": [{ date, qty }, ...] } (최신순, 기간 제한 없이 전체)
+ */
+router.post('/recent-issues', async (req: Request, res: Response) => {
+  try {
+    const itemIds: string[] = Array.isArray(req.body?.item_ids) ? req.body.item_ids.map(String) : [];
+    const deptIds: string[] = Array.isArray(req.body?.department_ids) ? req.body.department_ids.map(String) : [];
+    if (itemIds.length === 0 || deptIds.length === 0) return res.json({ data: {} });
+
+    const rows = await prisma.stockOutItem.findMany({
+      where: {
+        item_id: { in: itemIds },
+        stock_out: {
+          department_id: { in: deptIds },
+          status: { not: 'REVERSED' },
+        },
+      },
+      select: {
+        item_id: true,
+        issued_qty: true,
+        stock_out: { select: { department_id: true, issued_at: true } },
+      },
+      orderBy: { stock_out: { issued_at: 'desc' } },
+    });
+
+    const data: Record<string, { date: string; qty: number }[]> = {};
+    for (const r of rows) {
+      const key = `${r.item_id}|${r.stock_out.department_id}`;
+      if (!data[key]) data[key] = [];
+      data[key].push({
+        date: r.stock_out.issued_at.toISOString().slice(0, 10),
+        qty: Number(r.issued_qty),
+      });
+    }
+
+    res.json({ data });
+  } catch (e: any) {
+    console.error('[supply-analytics] recent-issues error:', e);
+    res.status(500).json({ error: e.message || '서버 오류' });
+  }
+});
+
+/**
  * GET /item-trend — 품목별 불출 추이 (최근 6개월)
  * query: item_id (required), department_id (optional)
  */

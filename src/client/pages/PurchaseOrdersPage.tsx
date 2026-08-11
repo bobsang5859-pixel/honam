@@ -3,10 +3,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, downloadBlob } from '../utils/api';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/Toast';
-import { PageHeader, FilterBar, DataTable, Modal, EmptyState, FilterChips, Pagination } from '../components/ui';
-import type { Column, FilterChip } from '../components/ui';
+import { PageHeader, FilterBar, DataTable, Modal, EmptyState, FilterChips, Pagination, DateRangeFilter, inDateRange } from '../components/ui';
+import type { Column, FilterChip, DateRange } from '../components/ui';
 import type { Item, Vendor } from '@shared/types';
-import { FileText, Send, Trash2, Eye, Download, Plus, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
+import { MID_CATEGORIES, setUserMidCategories } from '@shared/types';
+import { FileText, Send, Trash2, Eye, Download, Plus, ChevronDown, ChevronRight, BarChart3, PackagePlus } from 'lucide-react';
+import { PurchaseOrderHierarchyList } from './components/PurchaseOrderHierarchyList';
+// PendingQueuePanel 은 결의서 화면으로 작업이 일원화되어 발주 페이지에서 제거됨.
+// 발주서는 결의서를 불러와 변환하는 방식으로 생성한다.
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: '임시',
@@ -26,26 +30,35 @@ const STATUS_CLS: Record<string, string> = {
 
 const SOURCE_TYPE_TABS = [
   { v: '', l: '전체' },
-  { v: 'CONSUMABLE_REGULAR', l: '정기소모품' },
+  { v: 'CONSUMABLE_MEDICAL', l: '의료소모품' },
+  { v: 'CONSUMABLE_REGULAR', l: '일반소모품' },
+  { v: 'CONSUMABLE_OFFICE', l: '사무용품' },
   { v: 'DIAPER', l: '기저귀' },
-  { v: 'NIGHT_SNACK', l: '야간당직간식' },
+  { v: 'NIGHT_SNACK', l: '야간간식' },
   { v: 'ADHOC', l: '비정기' },
+  { v: 'EQUIPMENT', l: '비품' },
   { v: 'MANUAL', l: '수동' },
 ] as const;
 
 const SOURCE_TYPE_LABEL: Record<string, string> = {
-  CONSUMABLE_REGULAR: '정기소모품',
+  CONSUMABLE_MEDICAL: '의료소모품',
+  CONSUMABLE_REGULAR: '일반소모품',
+  CONSUMABLE_OFFICE: '사무용품',
   DIAPER: '기저귀',
-  NIGHT_SNACK: '야간당직간식',
+  NIGHT_SNACK: '야간간식',
   ADHOC: '비정기',
+  EQUIPMENT: '비품',
   MANUAL: '수동',
 };
 
 const SOURCE_TYPE_COLOR: Record<string, string> = {
+  CONSUMABLE_MEDICAL: 'bg-rose-100 text-rose-700',
   CONSUMABLE_REGULAR: 'bg-blue-100 text-blue-700',
+  CONSUMABLE_OFFICE: 'bg-indigo-100 text-indigo-700',
   DIAPER: 'bg-purple-100 text-purple-700',
   NIGHT_SNACK: 'bg-cyan-100 text-cyan-700',
   ADHOC: 'bg-orange-100 text-orange-700',
+  EQUIPMENT: 'bg-amber-100 text-amber-700',
   MANUAL: 'bg-gray-100 text-gray-700',
 };
 
@@ -383,11 +396,34 @@ export default function PurchaseOrdersPage() {
   const canSend = hasPerm('PURCHASE_MANAGE');
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  const [statusView, setStatusView] = useState<'active' | 'cancelled' | 'all'>('active');
+  const filteredOrders = useMemo(
+    () => orders.filter(o => {
+      if (!inDateRange((o as any).ordered_at, dateRange)) return false;
+      const isCancelled = o.status === 'CANCELLED' || (o as any).deleted_at;
+      if (statusView === 'active') return !isCancelled;
+      if (statusView === 'cancelled') return isCancelled;
+      return true; // all
+    }),
+    [orders, dateRange, statusView],
+  );
+  // 토글 카운트 (필터 없는 raw 기준) — 사용자에게 어느 쪽에 얼마나 있는지 보여주기
+  const statusCounts = useMemo(() => {
+    let active = 0, cancelled = 0;
+    for (const o of orders) {
+      if (!inDateRange((o as any).ordered_at, dateRange)) continue;
+      if (o.status === 'CANCELLED' || (o as any).deleted_at) cancelled++;
+      else active++;
+    }
+    return { active, cancelled, all: active + cancelled };
+  }, [orders, dateRange]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [sourceTypeTab, setSourceTypeTab] = useState('');
-  const [statusScope, setStatusScope] = useState<'ACTIVE' | 'DRAFT' | 'COMPLETED' | 'ALL'>('ACTIVE');
+  // 서버 호출용 — 클라 필터로 statusView 가 책임지므로 무제한으로 두고 클라에서 분기
+  const [statusScope, setStatusScope] = useState<'ACTIVE' | 'DRAFT' | 'COMPLETED' | 'ALL'>('ALL');
   const [poPage, setPoPage] = useState(1);
   const [poPageSize, setPoPageSize] = useState(20);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -407,6 +443,158 @@ export default function PurchaseOrdersPage() {
   const [itemSearch, setItemSearch] = useState('');
   const [filteredSearch, setFilteredSearch] = useState<Item[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // 결의서 → 발주서 변환 picker
+  const [decisionPickerOpen, setDecisionPickerOpen] = useState(false);
+  const [draftDecisions, setDraftDecisions] = useState<any[]>([]);
+  const [decisionPickerLoading, setDecisionPickerLoading] = useState(false);
+  const [decisionConverting, setDecisionConverting] = useState<string | null>(null);
+
+  const loadDraftDecisions = async () => {
+    setDecisionPickerLoading(true);
+    try {
+      const list: any[] = await api('/purchase-decisions');
+      // DRAFT 만 필터 — LOCKED 는 이미 발주에 사용됨
+      setDraftDecisions(list.filter(d => d.status === 'DRAFT'));
+    } catch (e: any) {
+      setMsg({ type: 'err', text: e?.message ?? '결의서 목록 조회 실패' });
+    } finally {
+      setDecisionPickerLoading(false);
+    }
+  };
+
+  // 결의서의 품목을 발주서 작성 form 에 로드.
+  // 자동 변환이 아니라 사용자가 form 에서 검토·편집 후 저장 — 자유입력 라인도 form 에 보이게 로드해서
+  // 사용자가 직접 처리(삭제 / 등록 품목으로 교체) 할 수 있도록.
+  const [loadedFromDecisionNo, setLoadedFromDecisionNo] = useState<string | null>(null);
+  const [loadedFromDecisionId, setLoadedFromDecisionId] = useState<string | null>(null);
+  const [freeInputLines, setFreeInputLines] = useState<{ name: string; spec: string; qty: number; unit_price: number; comment?: string }[]>([]);
+
+  // 자유입력 라인을 마스터에 등록하면서 발주서에 추가하는 폼 상태
+  const [registerFreeIdx, setRegisterFreeIdx] = useState<number | null>(null);
+  const [registerForm, setRegisterForm] = useState({ item_code: '', name: '', uom: 'EA', pack_size: 1, mid_category: '' });
+  const [registerSubmitting, setRegisterSubmitting] = useState(false);
+  // 사용자 추가 중분류 — 자유입력 마스터 등록의 분류 선택지에 합쳐 표시
+  const [userMids, setUserMids] = useState<{ code: string; name: string; major_label: string }[]>([]);
+  useEffect(() => {
+    api('/item-categories')
+      .then((rows: any[]) => {
+        const list = (Array.isArray(rows) ? rows : [])
+          .filter(r => r.is_active !== false && r.is_active !== 0)
+          .map(r => ({ code: String(r.code), name: String(r.name), major_label: String(r.major_label || '') }));
+        setUserMids(list);
+        setUserMidCategories(list.map(x => ({ code: x.code, name: x.name })));
+      })
+      .catch(() => {});
+  }, []);
+
+  const openRegisterFreeModal = (idx: number) => {
+    const f = freeInputLines[idx];
+    if (!f) return;
+    setRegisterForm({
+      item_code: '',
+      name: f.name ?? '',
+      uom: (f.spec && f.spec.trim()) || 'EA',
+      pack_size: 1,
+      mid_category: '',
+    });
+    setRegisterFreeIdx(idx);
+  };
+
+  const submitRegisterFree = async () => {
+    if (registerFreeIdx === null) return;
+    const code = registerForm.item_code.trim();
+    const name = registerForm.name.trim();
+    if (!name) {
+      showMsg('err', '품명은 필수입니다.');
+      return;
+    }
+    const mid = MID_CATEGORIES.find(m => m.value === registerForm.mid_category);
+    const userMid = userMids.find(u => u.code === registerForm.mid_category);
+    if (!mid && !userMid) {
+      showMsg('err', '카테고리를 선택해주세요.');
+      return;
+    }
+    // 기본 중분류는 첫 소분류 코드를, 사용자 추가 중분류는 그 코드 자체를 category 로 사용
+    const subCategory = mid ? mid.subs[0] : userMid!.code;
+    const free = freeInputLines[registerFreeIdx];
+    if (!free) return;
+    setRegisterSubmitting(true);
+    try {
+      const uom = (registerForm.uom || 'EA').trim() || 'EA';
+      const newItem: Item = await api('/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          // 비우면 서버가 분류 접두어로 자동 채번 (예: GEN-0001)
+          ...(code ? { item_code: code } : {}),
+          name,
+          category: subCategory,
+          uom,
+          purchase_uom: uom,
+          issue_uom: uom,
+          pack_size: Math.max(1, Number(registerForm.pack_size) || 1),
+        }),
+      });
+      setItems(prev => [...prev, newItem]);
+      setOrderItems(prev => prev.some(o => o.item_id === newItem.id) ? prev : [
+        ...prev,
+        {
+          item_id: newItem.id,
+          item_name: newItem.name,
+          uom: newItem.purchase_uom ?? newItem.uom,
+          ordered_qty: Math.max(1, Number(free.qty) || 1),
+          unit_price: Math.max(0, Number(free.unit_price) || 0),
+        },
+      ]);
+      setFreeInputLines(prev => prev.filter((_, j) => j !== registerFreeIdx));
+      setRegisterFreeIdx(null);
+      showMsg('ok', `${newItem.name} 마스터 등록 후 발주서에 추가했습니다.`);
+    } catch (e: any) {
+      showMsg('err', e?.message ?? '등록에 실패했습니다.');
+    } finally {
+      setRegisterSubmitting(false);
+    }
+  };
+
+  const loadDecisionIntoForm = (d: any) => {
+    // 거래처 + 비고 채움
+    setForm({
+      vendor_id: d.vendor_id ?? '',
+      expected_at: '',
+      note: d.comment ?? '',
+    });
+
+    // 품목: item_id 가 있는 것만 form 에 — items 마스터에서 매칭해서 loadable 한 형태로 변환
+    const itemsWithId: EditItem[] = [];
+    const free: typeof freeInputLines = [];
+    for (const it of (d.items ?? [])) {
+      if (it.item_id) {
+        const masterItem = items.find(m => m.id === it.item_id);
+        itemsWithId.push({
+          item_id: it.item_id,
+          item_name: it.name ?? masterItem?.name ?? '',
+          uom: it.unit ?? masterItem?.purchase_uom ?? masterItem?.uom ?? '',
+          ordered_qty: Number(it.qty ?? 0),
+          unit_price: Number(it.unit_price ?? 0),
+        } as EditItem);
+      } else {
+        free.push({
+          name: it.name ?? '',
+          spec: it.spec ?? '',
+          qty: Number(it.qty ?? 0),
+          unit_price: Number(it.unit_price ?? 0),
+          comment: it.comment ?? '',
+        });
+      }
+    }
+    setOrderItems(itemsWithId);
+    setFreeInputLines(free);
+    setLoadedFromDecisionNo(d.decision_no);
+    setLoadedFromDecisionId(d.id);
+
+    setDecisionPickerOpen(false);
+    setCreateModal(true);
+  };
 
   const [detail, setDetail] = useState<PurchaseOrder | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -542,7 +730,7 @@ export default function PurchaseOrdersPage() {
       {
         item_id: item.id,
         item_name: item.name,
-        uom: item.uom,
+        uom: item.purchase_uom ?? item.uom,
         ordered_qty: 1,
         unit_price: item.latest_price || 0,
       },
@@ -558,19 +746,24 @@ export default function PurchaseOrdersPage() {
     }
     setSubmitting(true);
     try {
-      await api('/purchase-orders', {
-        method: 'POST',
-        body: JSON.stringify({
-          vendor_id: form.vendor_id,
-          expected_at: form.expected_at || null,
-          note: form.note,
-          items: orderItems.map((o) => ({ item_id: o.item_id, ordered_qty: o.ordered_qty, unit_price: o.unit_price })),
-        }),
-      });
-      showMsg('ok', '발주서를 생성했습니다.');
+      const body: any = {
+        vendor_id: form.vendor_id,
+        expected_at: form.expected_at || null,
+        note: form.note,
+        items: orderItems.map((o) => ({ item_id: o.item_id, ordered_qty: o.ordered_qty, unit_price: o.unit_price })),
+      };
+      // 결의서에서 로드된 경우 — 서버가 PO 생성 후 결의서를 LOCKED 로 잠금
+      if (loadedFromDecisionId) body.from_decision_id = loadedFromDecisionId;
+      await api('/purchase-orders', { method: 'POST', body: JSON.stringify(body) });
+      showMsg('ok', loadedFromDecisionId
+        ? `발주서가 생성되고 결의서 ${loadedFromDecisionNo} 가 발주됨으로 잠겼습니다.`
+        : '발주서를 생성했습니다.');
       setCreateModal(false);
       setOrderItems([]);
       setForm({ vendor_id: '', expected_at: '', note: '' });
+      setLoadedFromDecisionNo(null);
+      setLoadedFromDecisionId(null);
+      setFreeInputLines([]);
       load();
     } catch (e: any) {
       showMsg('err', e.message);
@@ -611,7 +804,7 @@ export default function PurchaseOrdersPage() {
         item_id: item.id,
         item_name: item.name,
         item_code: item.item_code,
-        uom: item.uom,
+        uom: item.purchase_uom ?? item.uom,
         ordered_qty: 1,
         unit_price: item.latest_price || 0,
       },
@@ -665,6 +858,35 @@ export default function PurchaseOrdersPage() {
       load();
     } catch (e: any) {
       showMsg('err', e.message);
+    }
+  };
+
+  // 발주서 「되돌리기」 — CANCELLED 상태로 변경 + 묶인 구매결의서 자동 DRAFT 복원.
+  // DRAFT 는 협의 없이 자유롭게, SENT 는 거래처와 협의 후. PARTIAL_RECEIVED/CLOSED 는 서버가 차단.
+  const revertPO = async (po: { id: string; po_no: string; status: string }) => {
+    const warnSent = po.status === 'SENT'
+      ? '\n\n⚠ 이미 거래처로 발송된 발주서입니다. 거래처에 별도로 취소 통보를 해주세요.'
+      : '';
+    const reason = window.prompt(
+      `발주서 ${po.po_no} 를 「되돌리기」 합니다:\n` +
+      ` · 이 발주서는 「취소됨(CANCELLED)」 상태로 변경 (목록엔 남음)\n` +
+      ` · 묶여 있던 구매결의서가 있으면 임시저장(DRAFT) 으로 복원되어 다시 편집 가능${warnSent}\n\n` +
+      `사유를 5자 이상 입력해주세요:`,
+      '',
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 5) { showMsg('err', '사유는 5자 이상 입력해주세요.'); return; }
+    try {
+      await api(`/purchase-orders/${po.id}/revert`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: trimmed }),
+      });
+      showMsg('ok', `${po.po_no} 되돌리기 완료 (취소됨). 연결된 결의서가 있으면 편집 가능합니다.`);
+      setDetail(null);
+      load();
+    } catch (e: any) {
+      showMsg('err', e?.message ?? '되돌리기 실패');
     }
   };
 
@@ -881,35 +1103,28 @@ export default function PurchaseOrdersPage() {
       <PageHeader
         icon={FileText}
         title="발주 관리"
-        description="발주서 작성 및 관리"
+        description="발주서 작성 · 결의서/기안서 출력"
         actions={
-          <div className="flex gap-2">
-            <button onClick={() => setShowAnalysis((v) => !v)} className="btn-secondary inline-flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4" />
-              {showAnalysis ? '분석 닫기' : '업체별 분석'}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setGumaeModal(true)} className="btn-secondary inline-flex items-center gap-1.5" title="선택한 발주서들로 구매결의서 양식 PDF 출력">
+              <Download className="w-4 h-4" /> 구매결의서
             </button>
-            <button onClick={() => docTab === 'gian' ? setGianModal(true) : setGumaeModal(true)} className="btn-secondary inline-flex items-center gap-1.5">
-              <Download className="w-4 h-4" />
-              {docTab === 'gian' ? '기안서 출력' : '구매결의서 출력'}
+            <button onClick={() => setGianModal(true)} className="btn-secondary inline-flex items-center gap-1.5" title="선택한 발주서들로 기안서 양식 PDF 출력">
+              <Download className="w-4 h-4" /> 기안서
             </button>
             {canCreate && (
+              <button onClick={() => { setDecisionPickerOpen(true); loadDraftDecisions(); }} className="btn-secondary inline-flex items-center gap-1.5" title="구매결의서를 불러와 발주서를 만듭니다">
+                <FileText className="w-4 h-4" /> 결의서 불러오기
+              </button>
+            )}
+            {canCreate && (
               <button onClick={() => setCreateModal(true)} className="btn-primary inline-flex items-center gap-1.5">
-                <Plus className="w-4 h-4" />
-                발주서 생성
+                <Plus className="w-4 h-4" /> 발주서 생성
               </button>
             )}
           </div>
         }
       />
-
-      <div className="flex gap-1 mb-4">
-        {(['gumae', 'gian'] as const).map(t => (
-          <button key={t} onClick={() => setDocTab(t)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${docTab === t ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {t === 'gumae' ? '구매결의서' : '기안서'}
-          </button>
-        ))}
-      </div>
 
       {msg && (
         <div className={`mb-4 p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
@@ -917,129 +1132,47 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      {showAnalysis && (
-        <div className="card mb-4 py-3">
-          <div className="flex flex-wrap gap-2 items-end">
-            <div>
-              <label className="label">시작일</label>
-              <input type="date" className="input w-40" value={sumRange.from} onChange={(e) => setSumRange((prev) => ({ ...prev, from: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label">종료일</label>
-              <input type="date" className="input w-40" value={sumRange.to} onChange={(e) => setSumRange((prev) => ({ ...prev, to: e.target.value }))} />
-            </div>
-            <div className="text-xs text-gray-600 ml-auto">발주합계: <b>{Number(vendorSummary?.totals?.order_total_current ?? 0).toLocaleString()}</b>원</div>
-          </div>
-        </div>
-      )}
+      <div className="mb-3">
+        <DateRangeFilter value={dateRange} onChange={setDateRange} label="발주일" />
+      </div>
 
-      <FilterBar
-        filters={[
-          {
-            key: 'source_type',
-            label: '유형 전체',
-            options: SOURCE_TYPE_TABS.filter(t => t.v !== '').map(t => ({ value: t.v, label: t.l })),
-            value: sourceTypeTab,
-            onChange: (v) => { setSourceTypeTab(v); setPoPage(1); },
-          },
-          {
-            key: 'status_scope',
-            label: '상태 범위',
-            options: STATUS_SCOPE_TABS.map(t => ({ value: t.v, label: t.l })),
-            value: statusScope,
-            onChange: (v) => { setStatusScope(v as any); setPoPage(1); },
-          },
-        ]}
-        onReset={() => { setSourceTypeTab(''); setStatusScope('ACTIVE'); setPoPage(1); }}
-      />
-      {(() => {
-        const poChips: FilterChip[] = [];
-        if (sourceTypeTab) poChips.push({ key: 'source_type', label: '유형', value: SOURCE_TYPE_LABEL[sourceTypeTab] || sourceTypeTab, onRemove: () => { setSourceTypeTab(''); setPoPage(1); } });
-        if (statusScope !== 'ACTIVE') poChips.push({ key: 'status_scope', label: '상태', value: STATUS_SCOPE_TABS.find(t => t.v === statusScope)?.l || statusScope, onRemove: () => { setStatusScope('ACTIVE'); setPoPage(1); } });
-        return <FilterChips chips={poChips} totalCount={orders.length} onResetAll={() => { setSourceTypeTab(''); setStatusScope('ACTIVE'); setPoPage(1); }} />;
-      })()}
-
-      {sourceTypeTab && sourceTypeTab !== 'MANUAL' && (
-        <div className="space-y-3 mb-4">
-          {groupLoading ? (
-            <div className="card p-4 text-sm text-gray-400">업체 그룹 데이터를 불러오는 중...</div>
-          ) : periodGrouped.length === 0 ? (
-            <div className="card p-4 text-sm text-gray-400">그룹핑할 데이터가 없습니다.</div>
-          ) : (
-            periodGrouped.map((pg) => (
-              <div key={`${pg.period_label}-${pg.period_start}`} className="space-y-2">
-                <div className="flex items-center gap-2 px-1">
-                  <span className="text-sm font-semibold text-navy-800">{pg.period_label}</span>
-                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${pg.period_matched ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                    {pg.period_matched ? '스케줄 매칭' : '기본 월 라벨'}
-                  </span>
-                  {pg.has_mixed_period_labels && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">복수 라벨 혼재</span>
-                  )}
-                </div>
-                {pg.vendors.map((g) => (
-                  <div key={`${pg.period_label}-${g.vendor_id || g.vendor_name}`} className="card p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <p className="font-semibold text-navy-800">{g.vendor_name}</p>
-                        <p className="text-xs text-gray-500">연결 신청: {g.request_nos.length > 0 ? g.request_nos.join(', ') : '-'}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        {g.orders.slice(0, 3).map((o) => (
-                          <button key={o.id} onClick={() => openDetail(o.id)} className="text-xs btn-secondary px-2 py-1">{o.po_no}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto rounded-xl border border-gray-200">
-                      <table className="tbl">
-                        <thead>
-                          <tr>
-                            <th>품목</th>
-                            <th className="text-right">신청합계</th>
-                            <th className="text-right">창고재고</th>
-                            <th className="text-right">발주수량</th>
-                            <th className="text-right">단가</th>
-                            <th className="text-right">금액</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {g.items.map((it) => (
-                            <tr key={it.item_id}>
-                              <td className="text-sm">{it.item_name}</td>
-                              <td className="text-right">{fmt(it.requested_qty)}</td>
-                              <td className="text-right">{fmt(inventoryByItem[it.item_id] ?? 0)}</td>
-                              <td className="text-right">{fmt(it.ordered_qty)}</td>
-                              <td className="text-right">{fmt(it.unit_price)}</td>
-                              <td className="text-right">{fmt(it.line_amount)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-1 mb-3">
+        {([
+          ['active',    '완료'],
+          ['cancelled', '취소'],
+          ['all',       '전체'],
+        ] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => { setStatusView(k); setPoPage(1); }}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              statusView === k ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {loading ? (
         <div className="card p-0 overflow-hidden">
           <div className="flex items-center justify-center py-16 text-gray-400 text-sm">로딩 중...</div>
         </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="card p-0"><EmptyState message={orders.length === 0 ? '발주 내역이 없습니다.' : '선택한 기간에 해당하는 발주서가 없습니다.'} /></div>
       ) : (
         <>
-          <DataTable<PurchaseOrder>
-            columns={columns}
-            data={orders.slice((poPage - 1) * poPageSize, poPage * poPageSize)}
-            keyField="id"
-            onRowClick={(o) => openDetail(o.id)}
-            emptyMessage="발주 내역이 없습니다."
+          <PurchaseOrderHierarchyList
+            orders={filteredOrders as any}
+            openDetail={openDetail}
+            sendPO={sendPO}
+            canSend={canSend}
+            fmt={fmt}
+            onPeriodChanged={load}
           />
           <Pagination
             currentPage={poPage}
-            totalItems={orders.length}
+            totalItems={filteredOrders.length}
             pageSize={poPageSize}
             onPageChange={setPoPage}
             onPageSizeChange={setPoPageSize}
@@ -1048,8 +1181,13 @@ export default function PurchaseOrdersPage() {
       )}
 
       {/* 발주서 생성 모달 */}
-      <Modal open={createModal} onClose={() => setCreateModal(false)} title="발주서 생성" size="lg">
-        <div className="grid grid-cols-2 gap-3 mb-5">
+      <Modal open={createModal} onClose={() => { setCreateModal(false); setLoadedFromDecisionNo(null); setLoadedFromDecisionId(null); setFreeInputLines([]); }} title="발주서 생성" size="lg">
+        {loadedFromDecisionNo && (
+          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+            결의서 <strong>{loadedFromDecisionNo}</strong> 에서 품목 로드됨. 검토 후 저장하면 발주서가 생성됩니다.
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="label">업체 *</label>
             <select value={form.vendor_id} onChange={(e) => setForm((f) => ({ ...f, vendor_id: e.target.value }))} className="input">
@@ -1067,6 +1205,18 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
 
+        {/* 결의서에서 품목 불러오기 진입점 */}
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setDecisionPickerOpen(true); loadDraftDecisions(); }}
+            className="text-xs px-3 py-1.5 rounded border border-teal-300 text-teal-700 hover:bg-teal-50 inline-flex items-center gap-1"
+          >
+            <FileText className="w-3.5 h-3.5" /> 결의서에서 품목 불러오기
+          </button>
+          <span className="text-xs text-slate-400">선택한 결의서의 거래처·품목을 form 에 채웁니다.</span>
+        </div>
+
         <div className="section-title mb-2">발주 품목</div>
         <div className="relative mb-3">
           <input type="text" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} className="input" placeholder="품목 검색 (이름 또는 코드)" />
@@ -1075,7 +1225,7 @@ export default function PurchaseOrdersPage() {
               {filteredSearch.map((item) => (
                 <button key={item.id} onClick={() => addItemToCreate(item)} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
                   <span className="font-medium">{item.name}</span>
-                  <span className="text-gray-400 ml-2 text-xs">{item.item_code} · {item.uom}{item.latest_price ? ` · ${fmt(item.latest_price)}원` : ''}</span>
+                  <span className="text-gray-400 ml-2 text-xs">{item.item_code} · {item.purchase_uom ?? item.uom}{item.latest_price ? ` · ${fmt(item.latest_price)}원` : ''}</span>
                 </button>
               ))}
             </div>
@@ -1123,9 +1273,153 @@ export default function PurchaseOrdersPage() {
             </table>
           </div>
         )}
+
+        {/* 자유입력 라인 — 결의서에 있던 마스터 미등록 품목. 발주서엔 못 들어가므로 사용자가 직접 처리 안내 */}
+        {freeInputLines.length > 0 && (
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
+            <div className="flex items-start gap-2 mb-2">
+              <span className="text-amber-700 text-sm font-medium">⚠ 자유입력 항목 {freeInputLines.length}건 — 발주서에 자동으로 들어가지 않음</span>
+            </div>
+            <p className="text-xs text-amber-700 mb-2">
+              아래 품목들은 마스터에 등록되지 않아 발주서 라인으로 저장 불가. 처리 방법:
+              ① 행 옆 <PackagePlus className="inline w-3 h-3 -mt-0.5" /> 클릭 → 마스터 등록 후 자동으로 발주서에 추가
+              ② 결의서 인쇄/엑셀로 거래처에 별도 전달
+            </p>
+            <div className="overflow-x-auto rounded bg-white border border-amber-200">
+              <table className="text-xs w-full">
+                <thead className="bg-amber-100">
+                  <tr>
+                    <th className="px-2 py-1 text-left">품명</th>
+                    <th className="px-2 py-1 text-left">규격</th>
+                    <th className="px-2 py-1 text-right">수량</th>
+                    <th className="px-2 py-1 text-right">단가</th>
+                    <th className="px-2 py-1 text-right">금액</th>
+                    <th className="px-2 py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {freeInputLines.map((f, i) => (
+                    <tr key={i} className="border-t border-amber-100">
+                      <td className="px-2 py-1">{f.name}</td>
+                      <td className="px-2 py-1 text-slate-500">{f.spec}</td>
+                      <td className="px-2 py-1 text-right">{fmt(f.qty)}</td>
+                      <td className="px-2 py-1 text-right">{fmt(f.unit_price)}</td>
+                      <td className="px-2 py-1 text-right font-medium">{fmt(Math.round(f.qty * f.unit_price))}</td>
+                      <td className="px-2 py-1">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => openRegisterFreeModal(i)}
+                            className="text-blue-600 hover:text-blue-800"
+                            title="품목 마스터에 등록하고 발주서에 추가"
+                          >
+                            <PackagePlus className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setFreeInputLines(prev => prev.filter((_, j) => j !== i))}
+                            className="text-amber-600 hover:text-amber-800"
+                            title="이 라인 무시 (목록에서 제거)"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-amber-50 font-semibold">
+                    <td colSpan={4} className="px-2 py-1 text-right">자유입력 합계</td>
+                    <td className="px-2 py-1 text-right text-amber-700">
+                      {fmt(Math.round(freeInputLines.reduce((s, f) => s + f.qty * f.unit_price, 0)))}원
+                    </td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={() => setCreateModal(false)} className="btn-secondary">취소</button>
+          <button onClick={() => { setCreateModal(false); setLoadedFromDecisionNo(null); setLoadedFromDecisionId(null); setFreeInputLines([]); }} className="btn-secondary">취소</button>
           <button onClick={createPO} disabled={submitting} className="btn-primary">{submitting ? '저장 중...' : '저장'}</button>
+        </div>
+      </Modal>
+
+      {/* 자유입력 → 마스터 등록 + 발주서 추가 모달 */}
+      <Modal
+        open={registerFreeIdx !== null}
+        onClose={() => { if (!registerSubmitting) setRegisterFreeIdx(null); }}
+        title="자유입력 항목 마스터 등록"
+      >
+        <p className="text-xs text-slate-500 mb-3">
+          품목 마스터에 등록한 뒤 현재 작성 중인 발주서에 자동으로 추가합니다. 코드와 카테고리는 나중에 품목관리에서 수정 가능합니다.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">품목코드</label>
+            <input
+              type="text"
+              value={registerForm.item_code}
+              onChange={e => setRegisterForm(f => ({ ...f, item_code: e.target.value }))}
+              className="input"
+              placeholder="비우면 분류별 자동 생성 (MED/GEN/OFF/EQP-####)"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="label">카테고리 *</label>
+            <select
+              value={registerForm.mid_category}
+              onChange={e => setRegisterForm(f => ({ ...f, mid_category: e.target.value }))}
+              className="input"
+            >
+              <option value="">선택...</option>
+              {MID_CATEGORIES.map(mid => (
+                <option key={mid.value} value={mid.value}>{mid.label}</option>
+              ))}
+              {userMids.length > 0 && (
+                <optgroup label="사용자 추가 분류">
+                  {userMids.map(u => (
+                    <option key={u.code} value={u.code}>{u.major_label ? `${u.major_label} › ${u.name}` : u.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="label">품명 *</label>
+            <input
+              type="text"
+              value={registerForm.name}
+              onChange={e => setRegisterForm(f => ({ ...f, name: e.target.value }))}
+              className="input"
+            />
+          </div>
+          <div>
+            <label className="label">단위(uom)</label>
+            <input
+              type="text"
+              value={registerForm.uom}
+              onChange={e => setRegisterForm(f => ({ ...f, uom: e.target.value }))}
+              className="input"
+              placeholder="EA"
+            />
+          </div>
+          <div>
+            <label className="label">포장변환비율</label>
+            <input
+              type="number"
+              min={1}
+              value={registerForm.pack_size}
+              onChange={e => setRegisterForm(f => ({ ...f, pack_size: Math.max(1, Number(e.target.value) || 1) }))}
+              className="input"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={() => setRegisterFreeIdx(null)} disabled={registerSubmitting} className="btn-secondary">취소</button>
+          <button onClick={submitRegisterFree} disabled={registerSubmitting} className="btn-primary">
+            {registerSubmitting ? '등록 중...' : '등록 후 발주서에 추가'}
+          </button>
         </div>
       </Modal>
 
@@ -1141,6 +1435,15 @@ export default function PurchaseOrdersPage() {
               {canCreate && detail.status === 'DRAFT' && (
                 <button onClick={() => deletePO(detail.id)} className="btn-danger mr-auto text-sm inline-flex items-center gap-1">
                   <Trash2 className="w-3.5 h-3.5" /> 삭제
+                </button>
+              )}
+              {canCreate && (detail.status === 'DRAFT' || detail.status === 'SENT') && (
+                <button
+                  onClick={() => revertPO({ id: detail.id, po_no: detail.po_no, status: detail.status })}
+                  className="text-sm text-orange-600 hover:bg-orange-50 px-3 py-1 rounded inline-flex items-center gap-1 border border-orange-200"
+                  title="이 발주서를 취소하고 연결된 결의서를 다시 편집 가능하게 되돌리기"
+                >
+                  되돌리기
                 </button>
               )}
               {canSend && detail.status === 'DRAFT' && (
@@ -1179,7 +1482,7 @@ export default function PurchaseOrdersPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="section-title m-0">발주 품목</div>
-                {canCreate && detail.status === 'DRAFT' && !editMode && <button onClick={() => setEditMode(true)} className="text-xs btn-secondary px-3 py-1">수정</button>}
+                {canCreate && (detail.status === 'DRAFT' || detail.status === 'SENT') && !editMode && <button onClick={() => setEditMode(true)} className="text-xs btn-secondary px-3 py-1">수정</button>}
                 {editMode && (
                   <div className="flex gap-2">
                     <button onClick={() => { setEditMode(false); setDetailSearch(''); setDetailFiltered([]); }} className="text-xs btn-secondary px-3 py-1">취소</button>
@@ -1196,7 +1499,7 @@ export default function PurchaseOrdersPage() {
                       {detailFiltered.map((item) => (
                         <button key={item.id} onClick={() => addItemToEdit(item)} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
                           <span className="font-medium">{item.name}</span>
-                          <span className="text-gray-400 ml-2 text-xs">{item.item_code} · {item.uom}{item.latest_price ? ` · ${fmt(item.latest_price)}원` : ''}</span>
+                          <span className="text-gray-400 ml-2 text-xs">{item.item_code} · {item.purchase_uom ?? item.uom}{item.latest_price ? ` · ${fmt(item.latest_price)}원` : ''}</span>
                         </button>
                       ))}
                     </div>
@@ -1220,7 +1523,7 @@ export default function PurchaseOrdersPage() {
                       <tr key={item.item_id}>
                         <td>
                           <div className="font-medium text-sm">{item.item_name}</div>
-                          <div className="text-xs text-gray-400">{item.item_code} · {item.uom}</div>
+                          <div className="text-xs text-gray-400">{item.item_code} · {item.purchase_uom ?? item.uom}</div>
                         </td>
                         <td className="text-right text-sm text-gray-600">{fmt(inventoryByItem[item.item_id] ?? 0)}</td>
                         {editMode ? (
@@ -1308,6 +1611,82 @@ export default function PurchaseOrdersPage() {
         form={gnForm}
         onFormChange={(partial) => setGnForm(prev => ({ ...prev, ...partial }))}
       />}
+
+      {/* 결의서 → 발주서 변환 picker */}
+      <Modal
+        open={decisionPickerOpen}
+        onClose={() => setDecisionPickerOpen(false)}
+        title="결의서 품목 불러오기"
+        size="lg"
+        footer={<button onClick={() => setDecisionPickerOpen(false)} className="btn-secondary">닫기</button>}
+      >
+        {decisionPickerLoading ? (
+          <div className="py-8 text-center text-sm text-slate-400">불러오는 중...</div>
+        ) : draftDecisions.length === 0 ? (
+          <div className="py-8 text-center text-sm text-slate-400">
+            DRAFT 상태 결의서가 없습니다.
+            <div className="text-xs mt-1">구매결의서 메뉴에서 새로 작성하거나, 기존 결의서를 편집하세요.</div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500 mb-2">결의서를 선택하면 발주서 작성 form 에 거래처와 품목이 채워집니다. 검토·편집 후 저장하세요.</p>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2 text-left">결의서</th>
+                    <th className="px-3 py-2 text-left">거래처</th>
+                    <th className="px-3 py-2 text-center">회차</th>
+                    <th className="px-3 py-2 text-right">품목수</th>
+                    <th className="px-3 py-2 text-right">합계</th>
+                    <th className="px-3 py-2 text-center">작성</th>
+                    <th className="px-3 py-2 w-28"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {draftDecisions.map((d: any) => {
+                    const total = (d.items ?? []).reduce(
+                      (s: number, it: any) => s + Number(it.qty ?? 0) * Number(it.unit_price ?? 0), 0,
+                    );
+                    const freeCount = (d.items ?? []).filter((it: any) => !it.item_id).length;
+                    return (
+                      <tr key={d.id} className="border-t border-slate-100 hover:bg-slate-50/40">
+                        <td className="px-3 py-2 font-mono text-xs">{d.decision_no}</td>
+                        <td className="px-3 py-2">{d.vendor_name}</td>
+                        <td className="px-3 py-2 text-center text-xs">{d.period_label || '-'}</td>
+                        <td className="px-3 py-2 text-right">
+                          {(d.items ?? []).length}
+                          {freeCount > 0 && (
+                            <span className="text-[10px] text-amber-600 ml-1" title="자유입력(마스터 미등록) 라인">
+                              ({freeCount} 자유)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-blue-700">
+                          ₩{Math.round(total).toLocaleString('ko-KR')}
+                        </td>
+                        <td className="px-3 py-2 text-center text-xs text-slate-500">
+                          {d.created_at ? new Date(d.created_at).toLocaleDateString('ko-KR') : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => loadDecisionIntoForm(d)}
+                            disabled={(d.items ?? []).length === 0}
+                            className="text-xs px-2 py-1 rounded bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40"
+                          >
+                            품목 불러오기
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
+

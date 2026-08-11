@@ -8,6 +8,7 @@ import { prisma } from '../index';
 import { authMiddleware, requireMenuAccess, requirePermission, isCustomMenuUser, AuthRequest } from '../middleware/auth';
 import { audit } from '../utils/audit';
 import { importPatientsFromBuffer } from '../services/patient-import';
+import { detectFileType, processWonmuFile, processDailyBoardFile, processRehabFile } from '../services/excel-sync';
 
 const router = Router();
 router.use(authMiddleware);
@@ -100,12 +101,13 @@ const validateProjectScope = (projectName: string, projectRegion: string, projec
 };
 
 function canViewAllPatients(req: AuthRequest): boolean {
-  if (isCustomMenuUser(req.user)) {
-    const menus = req.user?.menu_permissions ?? [];
-    return menus.includes('patient-manage') || menus.includes('patient-stats');
-  }
+  // "전체 부서 환자 조회" 권한 — 메뉴 접근 권한과 분리.
+  // 명시적 *_ALL 권한 또는 SYSTEM_ADMIN 만 통과.
+  // (이전 버그: STATS_VIEW(소모품 통계, 내 부서만) 만 있어도 전체 조회되던 권한 누수 수정)
   const perms = req.user?.permissions ?? [];
-  return perms.includes('SYSTEM_ADMIN') || perms.includes('PURCHASE_MANAGE') || perms.includes('STATS_VIEW');
+  return perms.includes('SYSTEM_ADMIN')
+      || perms.includes('PATIENT_STATS_VIEW_ALL')
+      || perms.includes('STATS_VIEW_ALL');
 }
 
 async function ensureIncinerationTables(db: any) {
@@ -348,6 +350,121 @@ async function ensureBoardForDate(departmentId: string, date: Date) {
       update: {},
     });
   }
+
+  // 보정: patients 테이블이 진실의 원천. ADMITTED 환자가 있는데 보드 셀이 빈 경우 백필
+  const admittedPatients = await (prisma as any).patient.findMany({
+    where: {
+      department_id: departmentId,
+      status: 'ADMITTED',
+      deleted_at: null,
+      room_no: { not: '' },
+      bed_no: { not: null },
+    },
+  });
+  if (admittedPatients.length > 0) {
+    const cellsForDate = await (prisma as any).wardRoomBoard.findMany({
+      where: { department_id: departmentId, board_date: date, deleted_at: null },
+    });
+    const cellByKey = new Map<string, any>();
+    for (const c of cellsForDate) cellByKey.set(`${c.room_no}:${c.bed_no}`, c);
+
+    for (const p of admittedPatients) {
+      const cell = cellByKey.get(`${p.room_no}:${p.bed_no}`);
+      if (!cell) continue;
+      if (cell.patient_id === p.id) continue; // 이미 정합
+      if (cell.patient_id && cell.patient_id !== p.id) continue; // 다른 환자가 점유 — 충돌은 별도 처리
+      // 빈 셀에 환자 백필
+      await (prisma as any).wardRoomBoard.update({
+        where: { id: cell.id },
+        data: {
+          patient_id: p.id,
+          patient_name: p.name,
+          patient_no: p.patient_no ?? '',
+          chart_no: p.chart_no ?? '',
+          gender: p.gender ?? 'UNKNOWN',
+          mobility_type: p.mobility_type ?? 'AMBULATORY',
+          insurance_type: p.insurance_type ?? 'HEALTH',
+          copay_reduction: p.copay_reduction ?? 'NONE',
+          patient_group: p.patient_group ?? 'UNRATED',
+          specializations: p.specializations ?? '[]',
+          infection_strain: p.infection_strain ?? '',
+          period_type: p.period_type ?? '',
+          period_phase: p.period_phase ?? '',
+          diaper_state: p.diaper_state ?? '',
+          diaper_price: p.diaper_price ?? null,
+          diaper_start_date: p.diaper_start_date ?? null,
+          diaper_end_date: p.diaper_end_date ?? null,
+          prev_hospital: p.prev_hospital ?? '',
+          acquaintance: p.acquaintance ?? '',
+          acquaintance_color: p.acquaintance_color ?? '',
+          main_disease_code_id: p.main_disease_code_id ?? null,
+          caregiver_type: p.caregiver_type ?? '',
+          guardian_name: p.guardian_name ?? '',
+          billing_sms_phone: p.billing_sms_phone ?? '',
+          project_name: p.project_name ?? '',
+          project_region: p.project_region ?? '',
+          project_sigungu_office: p.project_sigungu_office ?? '',
+          rehab_type: p.rehab_type ?? '',
+          onset_date: p.onset_date ?? null,
+          status: 'ADMITTED',
+        },
+      });
+    }
+  }
+}
+
+const REHAB_TYPE_VALUES = new Set(['', 'CNS', 'OS', 'OUTPATIENT']);
+function normalizeRehabType(v: any): string {
+  const s = String(v ?? '').trim().toUpperCase();
+  return REHAB_TYPE_VALUES.has(s) ? s : '';
+}
+function normalizeOnsetDate(v: any): Date | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// 자리이동·퇴원·교환 시 ward_room_boards 의 환자 정보 전체를 비우기 위한 빈 자리 데이터.
+// patient_id 만 null 로 두면 infection_strain·specializations·rehab_type 등 이전 환자의 잔재가
+// "빈자리"인데 MR/CRE 표시되는 식으로 잘못 노출되므로 모든 환자 컬럼을 기본값으로 되돌린다.
+function emptyBedBoardData(status: string = 'DISCHARGED') {
+  return {
+    patient_id: null,
+    patient_no: '',
+    chart_no: '',
+    patient_name: '',
+    gender: 'UNKNOWN',
+    mobility_type: 'AMBULATORY',
+    insurance_type: 'HEALTH',
+    copay_reduction: 'NONE',
+    patient_group: 'UNRATED',
+    specializations: '[]',
+    infection_strain: '',
+    period_type: '',
+    period_phase: '',
+    diaper_state: 'NONE',
+    diaper_price: null,
+    diaper_start_date: null,
+    diaper_end_date: null,
+    prev_hospital: '',
+    acquaintance: '',
+    acquaintance_color: '',
+    main_disease_code_id: null,
+    caregiver_type: '',
+    guardian_name: '',
+    billing_sms_phone: '',
+    project_name: '',
+    project_region: '',
+    project_sigungu_office: '',
+    address: '',
+    referral_source: '',
+    discharge_type: '',
+    rehab_type: '',
+    onset_date: null,
+    note: '',
+    is_manual: false,
+    status,
+  } as any;
 }
 
 function normalizePatient(body: any) {
@@ -368,6 +485,14 @@ function normalizePatient(body: any) {
   const projectName = String(body.project_name ?? '').trim();
   const projectRegion = String(body.project_region ?? '').trim();
   const projectSigunguOffice = String(body.project_sigungu_office ?? '').trim();
+  // 재활구분이 CNS/OS 면 specializations 에 'REHAB' 자동 포함 — 통계 일관성 (특성화 REHAB ↔ rehab_type)
+  const rehabType = normalizeRehabType(body.rehab_type);
+  const inputSpecs = Array.isArray(body.specializations)
+    ? body.specializations.filter((s: any) => typeof s === 'string')
+    : [];
+  const specsArray = (rehabType === 'CNS' || rehabType === 'OS')
+    ? Array.from(new Set([...inputSpecs, 'REHAB']))
+    : inputSpecs;
   return {
     chart_no: String(body.chart_no ?? body.patient_no ?? '').trim(),
     patient_no: String(body.patient_no ?? '').trim(),
@@ -377,7 +502,7 @@ function normalizePatient(body: any) {
     insurance_type: String(body.insurance_type ?? 'HEALTH'),
     copay_reduction: String(body.copay_reduction ?? 'NONE'),
     patient_group: String(body.patient_group ?? 'UNRATED'),
-    specializations: JSON.stringify(Array.isArray(body.specializations) ? body.specializations : []),
+    specializations: JSON.stringify(specsArray),
     infection_strain: String(body.infection_strain ?? ''),
     period_type: rawPeriodType,
     period_phase: String(body.period_phase ?? ''),
@@ -388,6 +513,7 @@ function normalizePatient(body: any) {
     acquaintance_color: String(body.acquaintance_color ?? ''),
     address: String(body.address ?? ''),
     referral_source: String(body.referral_source ?? ''),
+    discharge_type: String(body.discharge_type ?? ''),
     main_disease_code_id: body.main_disease_code_id ? String(body.main_disease_code_id).trim() : null,
     caregiver_type: caregiverType,
     guardian_name: String(body.guardian_name ?? '').trim(),
@@ -400,6 +526,8 @@ function normalizePatient(body: any) {
     note: [baseNote, periodNote].filter(Boolean).join(' ').trim(),
     diaper_start_date: body.diaper_start_date ? new Date(body.diaper_start_date) : null,
     diaper_end_date: body.diaper_end_date ? new Date(body.diaper_end_date) : null,
+    rehab_type: rehabType,
+    onset_date: normalizeOnsetDate(body.onset_date),
   };
 }
 
@@ -461,6 +589,8 @@ async function admitOne(payload: any, userId: string) {
       project_name: data.project_name,
       project_region: data.project_region,
       project_sigungu_office: data.project_sigungu_office,
+      rehab_type: data.rehab_type,
+      onset_date: data.onset_date,
       note: data.note,
     } as any,
   });
@@ -508,6 +638,8 @@ async function admitOne(payload: any, userId: string) {
       project_name: patient.project_name,
       project_region: patient.project_region,
       project_sigungu_office: patient.project_sigungu_office,
+      rehab_type: patient.rehab_type ?? '',
+      onset_date: patient.onset_date ?? null,
       status: 'ADMITTED',
       note: patient.note,
     },
@@ -539,6 +671,8 @@ async function admitOne(payload: any, userId: string) {
       project_name: patient.project_name,
       project_region: patient.project_region,
       project_sigungu_office: patient.project_sigungu_office,
+      rehab_type: patient.rehab_type ?? '',
+      onset_date: patient.onset_date ?? null,
       status: 'ADMITTED',
       note: patient.note,
     },
@@ -613,6 +747,8 @@ router.get('/', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), async (req:
       disease_code_expires_at: p.disease_code_expires_at ? p.disease_code_expires_at.toISOString().slice(0, 10) : null,
       diaper_start_date: p.diaper_start_date ? p.diaper_start_date.toISOString().slice(0, 10) : null,
       diaper_end_date: p.diaper_end_date ? p.diaper_end_date.toISOString().slice(0, 10) : null,
+      onset_date: p.onset_date ? p.onset_date.toISOString().slice(0, 10) : null,
+      rehab_type: p.rehab_type ?? '',
     })));
   } catch (e) {
     console.error(e);
@@ -620,7 +756,7 @@ router.get('/', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), async (req:
   }
 });
 
-router.put('/bulk', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/bulk', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   try {
     for (const row of rows) {
@@ -644,6 +780,8 @@ router.put('/bulk', requirePermission('REQUEST_USE'), async (req: AuthRequest, r
           prev_hospital: patch.prev_hospital,
           acquaintance: patch.acquaintance,
           acquaintance_color: patch.acquaintance_color,
+          rehab_type: patch.rehab_type,
+          onset_date: patch.onset_date,
           note: patch.note,
           room_no: row.room_no ?? '',
           bed_no: row.bed_no ?? null,
@@ -681,7 +819,7 @@ router.get('/room-config', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), 
 });
 
 // 전체 병동의 임종실 목록 (빈 자리 포함)
-router.get('/hospice-rooms', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.get('/hospice-rooms', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const date = toDateOnly(String(req.query.date ?? new Date().toISOString()));
     const rooms = await (prisma as any).wardRoom.findMany({
@@ -714,7 +852,7 @@ router.get('/hospice-rooms', requirePermission('REQUEST_USE'), async (req: AuthR
   }
 });
 
-router.put('/room-config/:departmentId', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/room-config/:departmentId', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   const rows = Array.isArray(req.body?.rooms) ? req.body.rooms : [];
   try {
     const departmentId = String(req.params.departmentId);
@@ -810,14 +948,17 @@ router.get('/board', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), async 
   try {
     await ensureDefaultWardRooms();
     await ensureBoardForDate(departmentId, date);
+
     const rooms = await (prisma as any).wardRoom.findMany({
       where: { department_id: departmentId, deleted_at: null, is_active: true },
       orderBy: [{ sort_order: 'asc' }, { room_no: 'asc' }],
     });
     const cells = await (prisma as any).wardRoomBoard.findMany({
       where: { department_id: departmentId, board_date: date, deleted_at: null },
+      include: { patient: { select: { admitted_at: true } } },
       orderBy: [{ room_no: 'asc' }, { bed_no: 'asc' }],
     });
+
     const grouped = rooms.map((room: any) => ({
       ...room,
       // 인실 축소 즉시 반영: capacity 범위 이내의 병상만 표시
@@ -827,6 +968,9 @@ router.get('/board', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), async 
         .map((c: any) => ({
           ...c,
           specializations: JSON.parse(c.specializations ?? '[]'),
+          admitted_at: c.patient?.admitted_at ? c.patient.admitted_at.toISOString().slice(0, 10) : null,
+          onset_date: c.onset_date ? c.onset_date.toISOString().slice(0, 10) : null,
+          rehab_type: c.rehab_type ?? '',
         })),
     }));
     res.json({ date: date.toISOString(), rooms: grouped });
@@ -836,7 +980,7 @@ router.get('/board', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), async 
   }
 });
 
-router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/board/cell/:id', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const before = await (prisma as any).wardRoomBoard.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ error: '대상을 찾을 수 없습니다.' });
@@ -909,6 +1053,8 @@ router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: Auth
             project_name: patch.project_name,
             project_region: patch.project_region,
             project_sigungu_office: patch.project_sigungu_office,
+            rehab_type: patch.rehab_type,
+            onset_date: patch.onset_date,
             note: patch.note,
             ...(req.body?.admitted_at && String(req.body.admitted_at).trim() ? { admitted_at: new Date(req.body.admitted_at) } : {}),
           } as any,
@@ -950,6 +1096,8 @@ router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: Auth
             project_name: patch.project_name,
             project_region: patch.project_region,
             project_sigungu_office: patch.project_sigungu_office,
+            rehab_type: patch.rehab_type,
+            onset_date: patch.onset_date,
             note: patch.note,
           } as any,
         });
@@ -1004,6 +1152,8 @@ router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: Auth
         address: patch.address ?? '',
         referral_source: patch.referral_source ?? '',
         discharge_type: patch.discharge_type ?? '',
+        rehab_type: patch.rehab_type,
+        onset_date: patch.onset_date,
         status: String(req.body.status ?? before.status ?? 'ADMITTED'),
         note: patch.note,
         is_manual: true,
@@ -1020,7 +1170,7 @@ router.put('/board/cell/:id', requirePermission('REQUEST_USE'), async (req: Auth
   }
 });
 
-router.post('/admit', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/admit', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   const { department_id, room_no, bed_no, admitted_at } = req.body;
   if (!department_id || !room_no || !bed_no) return res.status(400).json({ error: '부서/병실/병상 정보는 필수입니다.' });
   try {
@@ -1031,25 +1181,40 @@ router.post('/admit', requirePermission('REQUEST_USE'), async (req: AuthRequest,
     });
     if (!room) return res.status(404).json({ error: '병실 정보를 찾을 수 없습니다.' });
 
-    const occupied = await (prisma as any).wardRoomBoard.findFirst({
-      where: {
-        board_date: date,
-        department_id: String(department_id),
-        ward_room_id: room.id,
-        bed_no: Number(bed_no),
-        deleted_at: null,
-        patient_name: { not: '' },
-      },
-    });
-    if (occupied) return res.status(400).json({ error: '해당 병상이 이미 사용 중입니다.' });
-
     const data = normalizePatient(req.body);
     validateProjectScope(data.project_name, data.project_region, data.project_sigungu_office);
     const dcId = req.body?.disease_code_id ? String(req.body.disease_code_id) : null;
     const dcRegisteredAt = req.body?.disease_code_registered_at ? new Date(req.body.disease_code_registered_at) : null;
     const dcExpiresAt = req.body?.disease_code_expires_at ? new Date(req.body.disease_code_expires_at) : null;
-    const patient = await (prisma as any).patient.create({
-      data: {
+
+    const patient = await (prisma as any).$transaction(async (tx: any) => {
+      // 침대 사용 여부 — patient 테이블 기준 (DB 레벨 partial unique index 와 이중 보호)
+      const occupiedPatient = await tx.patient.findFirst({
+        where: {
+          department_id: String(department_id),
+          room_no: String(room_no),
+          bed_no: Number(bed_no),
+          status: 'ADMITTED',
+          deleted_at: null,
+        },
+      });
+      if (occupiedPatient) throw new Error('BED_OCCUPIED');
+
+      // 보드 테이블 기준 — 수동 보드 입력 케이스 대비
+      const occupiedBoard = await tx.wardRoomBoard.findFirst({
+        where: {
+          board_date: date,
+          department_id: String(department_id),
+          ward_room_id: room.id,
+          bed_no: Number(bed_no),
+          deleted_at: null,
+          patient_name: { not: '' },
+        },
+      });
+      if (occupiedBoard) throw new Error('BED_OCCUPIED');
+
+      const created = await tx.patient.create({
+        data: {
         id: uuidv4(),
         patient_no: data.patient_no || data.chart_no,
         chart_no: data.chart_no || data.patient_no,
@@ -1083,126 +1248,140 @@ router.post('/admit', requirePermission('REQUEST_USE'), async (req: AuthRequest,
         project_name: data.project_name,
         project_region: data.project_region,
         project_sigungu_office: data.project_sigungu_office,
+        rehab_type: data.rehab_type,
+        onset_date: data.onset_date,
         note: data.note,
         ...(dcId && { disease_code_id: dcId }),
         ...(dcRegisteredAt && { disease_code_registered_at: dcRegisteredAt }),
         ...(dcExpiresAt && { disease_code_expires_at: dcExpiresAt }),
       } as any,
-    });
+      });
 
-    // V코드 이력 등록
-    if (dcId && dcRegisteredAt) {
-      try {
-        const { v4: uuid4 } = await import('uuid');
-        await (prisma as any).patientDiseaseCode.create({
-          data: {
-            id: uuid4(),
-            patient_id: patient.id,
-            disease_code_id: dcId,
-            registered_at: dcRegisteredAt,
-            expires_at: dcExpiresAt,
-            note: '',
-            is_active: true,
+      // V코드 이력 등록
+      if (dcId && dcRegisteredAt) {
+        try {
+          const { v4: uuid4 } = await import('uuid');
+          await tx.patientDiseaseCode.create({
+            data: {
+              id: uuid4(),
+              patient_id: created.id,
+              disease_code_id: dcId,
+              registered_at: dcRegisteredAt,
+              expires_at: dcExpiresAt,
+              note: '',
+              is_active: true,
+            },
+          });
+        } catch { /* 이력 등록 실패는 무시 */ }
+      }
+
+      await tx.wardRoomBoard.upsert({
+        where: {
+          board_date_department_id_ward_room_id_bed_no: {
+            board_date: date,
+            department_id: String(department_id),
+            ward_room_id: room.id,
+            bed_no: Number(bed_no),
           },
-        });
-      } catch { /* 이력 등록 실패는 무시 */ }
-    }
-
-    await (prisma as any).wardRoomBoard.upsert({
-      where: {
-        board_date_department_id_ward_room_id_bed_no: {
+        },
+        create: {
+          id: uuidv4(),
           board_date: date,
           department_id: String(department_id),
           ward_room_id: room.id,
+          room_no: String(room_no),
           bed_no: Number(bed_no),
+          patient_id: created.id,
+          patient_no: created.patient_no,
+          chart_no: created.chart_no,
+          patient_name: created.name,
+          gender: created.gender,
+          mobility_type: created.mobility_type,
+          insurance_type: created.insurance_type,
+          copay_reduction: created.copay_reduction ?? 'NONE',
+          patient_group: created.patient_group,
+          specializations: created.specializations,
+          infection_strain: created.infection_strain,
+          period_type: created.period_type,
+          period_phase: created.period_phase,
+          diaper_state: created.diaper_state,
+          diaper_price: created.diaper_price,
+          diaper_start_date: created.diaper_start_date ?? undefined,
+          diaper_end_date: created.diaper_end_date ?? undefined,
+          prev_hospital: created.prev_hospital,
+          acquaintance: created.acquaintance,
+          acquaintance_color: created.acquaintance_color,
+          main_disease_code_id: created.main_disease_code_id,
+          caregiver_type: created.caregiver_type,
+          guardian_name: created.guardian_name,
+          billing_sms_phone: created.billing_sms_phone,
+          project_name: created.project_name,
+          project_region: created.project_region,
+          project_sigungu_office: created.project_sigungu_office,
+          rehab_type: created.rehab_type ?? '',
+          onset_date: created.onset_date ?? null,
+          status: 'ADMITTED',
         },
-      },
-      create: {
-        id: uuidv4(),
-        board_date: date,
-        department_id: String(department_id),
-        ward_room_id: room.id,
-        room_no: String(room_no),
-        bed_no: Number(bed_no),
-        patient_id: patient.id,
-        patient_no: patient.patient_no,
-        chart_no: patient.chart_no,
-        patient_name: patient.name,
-        gender: patient.gender,
-        mobility_type: patient.mobility_type,
-        insurance_type: patient.insurance_type,
-      copay_reduction: patient.copay_reduction ?? 'NONE',
-        patient_group: patient.patient_group,
-        specializations: patient.specializations,
-        infection_strain: patient.infection_strain,
-        period_type: patient.period_type,
-        period_phase: patient.period_phase,
-        diaper_state: patient.diaper_state,
-        diaper_price: patient.diaper_price,
-        diaper_start_date: patient.diaper_start_date ?? undefined,
-        diaper_end_date: patient.diaper_end_date ?? undefined,
-        prev_hospital: patient.prev_hospital,
-        acquaintance: patient.acquaintance,
-        acquaintance_color: patient.acquaintance_color,
-        main_disease_code_id: patient.main_disease_code_id,
-        caregiver_type: patient.caregiver_type,
-        guardian_name: patient.guardian_name,
-        billing_sms_phone: patient.billing_sms_phone,
-        project_name: patient.project_name,
-        project_region: patient.project_region,
-        project_sigungu_office: patient.project_sigungu_office,
-        status: 'ADMITTED',
-      },
-      update: {
-        patient_id: patient.id,
-        patient_no: patient.patient_no,
-        chart_no: patient.chart_no,
-        patient_name: patient.name,
-        gender: patient.gender,
-        mobility_type: patient.mobility_type,
-        insurance_type: patient.insurance_type,
-      copay_reduction: patient.copay_reduction ?? 'NONE',
-        patient_group: patient.patient_group,
-        specializations: patient.specializations,
-        infection_strain: patient.infection_strain,
-        period_type: patient.period_type,
-        period_phase: patient.period_phase,
-        diaper_state: patient.diaper_state,
-        diaper_price: patient.diaper_price,
-        diaper_start_date: patient.diaper_start_date ?? undefined,
-        diaper_end_date: patient.diaper_end_date ?? undefined,
-        prev_hospital: patient.prev_hospital,
-        acquaintance: patient.acquaintance,
-        acquaintance_color: patient.acquaintance_color,
-        main_disease_code_id: patient.main_disease_code_id,
-        caregiver_type: patient.caregiver_type,
-        guardian_name: patient.guardian_name,
-        billing_sms_phone: patient.billing_sms_phone,
-        project_name: patient.project_name,
-        project_region: patient.project_region,
-        project_sigungu_office: patient.project_sigungu_office,
-        status: 'ADMITTED',
-      },
+        update: {
+          patient_id: created.id,
+          patient_no: created.patient_no,
+          chart_no: created.chart_no,
+          patient_name: created.name,
+          gender: created.gender,
+          mobility_type: created.mobility_type,
+          insurance_type: created.insurance_type,
+          copay_reduction: created.copay_reduction ?? 'NONE',
+          patient_group: created.patient_group,
+          specializations: created.specializations,
+          infection_strain: created.infection_strain,
+          period_type: created.period_type,
+          period_phase: created.period_phase,
+          diaper_state: created.diaper_state,
+          diaper_price: created.diaper_price,
+          diaper_start_date: created.diaper_start_date ?? undefined,
+          diaper_end_date: created.diaper_end_date ?? undefined,
+          prev_hospital: created.prev_hospital,
+          acquaintance: created.acquaintance,
+          acquaintance_color: created.acquaintance_color,
+          main_disease_code_id: created.main_disease_code_id,
+          caregiver_type: created.caregiver_type,
+          guardian_name: created.guardian_name,
+          billing_sms_phone: created.billing_sms_phone,
+          project_name: created.project_name,
+          project_region: created.project_region,
+          project_sigungu_office: created.project_sigungu_office,
+          rehab_type: created.rehab_type ?? '',
+          onset_date: created.onset_date ?? null,
+          status: 'ADMITTED',
+        },
+      });
+
+      await tx.patientEvent.create({
+        data: {
+          id: uuidv4(),
+          patient_id: created.id,
+          department_id: String(department_id),
+          event_type: 'ADMISSION',
+          event_date: admitted_at ? new Date(admitted_at) : new Date(),
+          room_no: String(room_no),
+          bed_no: Number(bed_no),
+          prev_hospital: data.prev_hospital,
+          memo: data.note,
+          created_by: req.user!.id,
+        } as any,
+      });
+
+      return created;
     });
 
-    await (prisma as any).patientEvent.create({
-      data: {
-        id: uuidv4(),
-        patient_id: patient.id,
-        department_id: String(department_id),
-        event_type: 'ADMISSION',
-        event_date: admitted_at ? new Date(admitted_at) : new Date(),
-        room_no: String(room_no),
-        bed_no: Number(bed_no),
-        prev_hospital: data.prev_hospital,
-        memo: data.note,
-        created_by: req.user!.id,
-      } as any,
-    });
     await audit({ actor_user_id: req.user!.id, action: 'CREATE', entity_type: 'patients', entity_id: patient.id });
     res.status(201).json(patient);
   } catch (e: any) {
     if (e?.message === 'PROJECT_SCOPE_REQUIRED') return res.status(400).json({ error: '사업명칭 입력 시 지역과 시군구청은 필수입니다.' });
+    if (e?.message === 'BED_OCCUPIED') return res.status(400).json({ error: '해당 병상이 이미 사용 중입니다.' });
+    if (e?.code === 'P2002' && String(e?.meta?.target ?? '').includes('active_bed')) {
+      return res.status(409).json({ error: '해당 병상이 이미 사용 중입니다. (동시 요청 감지)' });
+    }
     console.error(e);
     if (e.code === 'P2002') return res.status(409).json({ error: '중복 차트번호/환자번호입니다.' });
     res.status(500).json({ error: '서버 오류' });
@@ -1242,24 +1421,18 @@ async function closePatientState(patientId: string, eventType: 'DISCHARGE' | 'DE
 
   const date = toDateOnly(now.toISOString());
   await ensureBoardForDate(patient.department_id, date);
-  // 모든 날짜의 병실현황판에서 환자 제거
+  // 모든 날짜의 병실현황판에서 환자 제거 — 환자 관련 모든 필드 클리어 (감염균주·재활구분 등 잔재 방지)
   await (prisma as any).wardRoomBoard.updateMany({
     where: {
       patient_id: patientId,
       deleted_at: null,
     },
-    data: {
-      status: 'DISCHARGED',
-      patient_id: null,
-      patient_no: '',
-      chart_no: '',
-      patient_name: '',
-    },
+    data: emptyBedBoardData('DISCHARGED'),
   });
   return updated;
 }
 
-router.post('/:id/discharge', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/:id/discharge', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const updated = await closePatientState(req.params.id, 'DISCHARGE', req, req.body?.discharged_at, req.body?.discharge_type, req.body?.discharge_reason);
     await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: updated.id, after: { status: 'DISCHARGED' } });
@@ -1273,7 +1446,7 @@ router.post('/:id/discharge', requirePermission('REQUEST_USE'), async (req: Auth
 });
 
 // 하위호환: /death → discharge로 처리 (사유 "사망")
-router.post('/:id/death', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/:id/death', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const updated = await closePatientState(req.params.id, 'DISCHARGE', req, req.body?.deceased_at, undefined, '사망');
     await audit({ actor_user_id: req.user!.id, action: 'UPDATE', entity_type: 'patients', entity_id: updated.id, after: { status: 'DISCHARGED' } });
@@ -1286,7 +1459,7 @@ router.post('/:id/death', requirePermission('REQUEST_USE'), async (req: AuthRequ
   }
 });
 
-router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/:id/transfer', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const patient = await (prisma as any).patient.findUnique({ where: { id: req.params.id } });
     if (!patient) return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1348,7 +1521,7 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
         patient_id: patient.id,
         board_date: { gte: new Date(`${todayStr}T00:00:00.000Z`), lte: new Date(`${todayStr}T23:59:59.999Z`) },
       },
-      data: { patient_id: null, patient_name: '', patient_no: '', chart_no: '', status: 'DISCHARGED' },
+      data: emptyBedBoardData('DISCHARGED'),
     });
 
     // 교환 대상이 있으면: 상대방을 현재 환자의 원래 자리로 이동
@@ -1371,10 +1544,42 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
         where: { department_id: oldDeptId, room_no: oldRoomNo, deleted_at: null },
       });
       if (oldRoom) {
+        const swapBoardData = {
+          patient_id: swapPatient.id,
+          patient_name: swapPatient.name,
+          patient_no: swapPatient.patient_no ?? '',
+          chart_no: swapPatient.chart_no ?? '',
+          gender: swapPatient.gender ?? 'UNKNOWN',
+          mobility_type: swapPatient.mobility_type ?? 'AMBULATORY',
+          insurance_type: swapPatient.insurance_type ?? 'HEALTH',
+          copay_reduction: swapPatient.copay_reduction ?? 'NONE',
+          patient_group: swapPatient.patient_group ?? 'UNRATED',
+          specializations: swapPatient.specializations ?? '[]',
+          infection_strain: swapPatient.infection_strain ?? '',
+          period_type: swapPatient.period_type ?? '',
+          period_phase: swapPatient.period_phase ?? '',
+          diaper_state: swapPatient.diaper_state ?? '',
+          diaper_price: swapPatient.diaper_price ?? null,
+          diaper_start_date: swapPatient.diaper_start_date ?? null,
+          diaper_end_date: swapPatient.diaper_end_date ?? null,
+          prev_hospital: swapPatient.prev_hospital ?? '',
+          acquaintance: swapPatient.acquaintance ?? '',
+          acquaintance_color: swapPatient.acquaintance_color ?? '',
+          main_disease_code_id: swapPatient.main_disease_code_id ?? null,
+          caregiver_type: swapPatient.caregiver_type ?? '',
+          guardian_name: swapPatient.guardian_name ?? '',
+          billing_sms_phone: swapPatient.billing_sms_phone ?? '',
+          project_name: swapPatient.project_name ?? '',
+          project_region: swapPatient.project_region ?? '',
+          project_sigungu_office: swapPatient.project_sigungu_office ?? '',
+          rehab_type: swapPatient.rehab_type ?? '',
+          onset_date: swapPatient.onset_date ?? null,
+          status: 'ADMITTED',
+        };
         await (prisma as any).wardRoomBoard.upsert({
           where: { board_date_department_id_ward_room_id_bed_no: { board_date: date, department_id: oldDeptId, ward_room_id: oldRoom.id, bed_no: oldBedNo } },
-          create: { id: uuidv4(), board_date: date, department_id: oldDeptId, ward_room_id: oldRoom.id, room_no: oldRoomNo, bed_no: oldBedNo, patient_id: swapPatient.id, patient_name: swapPatient.name, patient_no: swapPatient.patient_no ?? '', chart_no: swapPatient.chart_no ?? '', status: 'ADMITTED' },
-          update: { patient_id: swapPatient.id, patient_name: swapPatient.name, patient_no: swapPatient.patient_no ?? '', chart_no: swapPatient.chart_no ?? '', status: 'ADMITTED' },
+          create: { id: uuidv4(), board_date: date, department_id: oldDeptId, ward_room_id: oldRoom.id, room_no: oldRoomNo, bed_no: oldBedNo, ...swapBoardData },
+          update: swapBoardData,
         });
       }
       // 교환 이벤트 기록
@@ -1395,10 +1600,42 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
         where: { department_id: targetDeptId, room_no: newRoomNo, deleted_at: null },
       });
       if (room) {
+        const targetBoardData = {
+          patient_id: updated.id,
+          patient_name: updated.name,
+          patient_no: updated.patient_no ?? '',
+          chart_no: updated.chart_no ?? '',
+          gender: updated.gender ?? 'UNKNOWN',
+          mobility_type: updated.mobility_type ?? 'AMBULATORY',
+          insurance_type: updated.insurance_type ?? 'HEALTH',
+          copay_reduction: updated.copay_reduction ?? 'NONE',
+          patient_group: updated.patient_group ?? 'UNRATED',
+          specializations: updated.specializations ?? '[]',
+          infection_strain: updated.infection_strain ?? '',
+          period_type: updated.period_type ?? '',
+          period_phase: updated.period_phase ?? '',
+          diaper_state: updated.diaper_state ?? '',
+          diaper_price: updated.diaper_price ?? null,
+          diaper_start_date: updated.diaper_start_date ?? null,
+          diaper_end_date: updated.diaper_end_date ?? null,
+          prev_hospital: updated.prev_hospital ?? '',
+          acquaintance: updated.acquaintance ?? '',
+          acquaintance_color: updated.acquaintance_color ?? '',
+          main_disease_code_id: updated.main_disease_code_id ?? null,
+          caregiver_type: updated.caregiver_type ?? '',
+          guardian_name: updated.guardian_name ?? '',
+          billing_sms_phone: updated.billing_sms_phone ?? '',
+          project_name: updated.project_name ?? '',
+          project_region: updated.project_region ?? '',
+          project_sigungu_office: updated.project_sigungu_office ?? '',
+          rehab_type: updated.rehab_type ?? '',
+          onset_date: updated.onset_date ?? null,
+          status: 'ADMITTED',
+        };
         await (prisma as any).wardRoomBoard.upsert({
           where: { board_date_department_id_ward_room_id_bed_no: { board_date: date, department_id: targetDeptId, ward_room_id: room.id, bed_no: newBedNo } },
-          create: { id: uuidv4(), board_date: date, department_id: targetDeptId, ward_room_id: room.id, room_no: newRoomNo, bed_no: newBedNo, patient_id: updated.id, patient_name: updated.name, patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '', status: 'ADMITTED' },
-          update: { patient_id: updated.id, patient_name: updated.name, patient_no: updated.patient_no ?? '', chart_no: updated.chart_no ?? '', status: 'ADMITTED' },
+          create: { id: uuidv4(), board_date: date, department_id: targetDeptId, ward_room_id: room.id, room_no: newRoomNo, bed_no: newBedNo, ...targetBoardData },
+          update: targetBoardData,
         });
       }
     }
@@ -1412,7 +1649,7 @@ router.post('/:id/transfer', requirePermission('REQUEST_USE'), async (req: AuthR
 });
 
 // 환자별 이벤트 이력
-router.get('/:id/events', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.get('/:id/events', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const events = await (prisma as any).patientEvent.findMany({
       where: { patient_id: req.params.id, deleted_at: null },
@@ -1428,7 +1665,7 @@ router.get('/:id/events', requirePermission('REQUEST_USE'), async (req: AuthRequ
 });
 
 // 환자별 급여/비급여 조회
-router.get('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.get('/:id/charges', requirePermission('PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const month = String(req.query.month ?? new Date().toISOString().slice(0, 7));
     const charges = await (prisma as any).patientCharge.findMany({
@@ -1440,7 +1677,7 @@ router.get('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthReq
 });
 
 // 환자별 급여/비급여 일괄 저장
-router.put('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/:id/charges', requirePermission('PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const { month, items } = req.body;
     if (!month || !Array.isArray(items)) return res.status(400).json({ error: 'month와 items 필수' });
@@ -1459,7 +1696,7 @@ router.put('/:id/charges', requirePermission('REQUEST_USE'), async (req: AuthReq
   } catch (e) { console.error(e); res.status(500).json({ error: '서버 오류' }); }
 });
 
-router.post('/:id/readmit', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/:id/readmit', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const patient = await (prisma as any).patient.findUnique({ where: { id: req.params.id } });
     if (!patient) return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1475,7 +1712,7 @@ router.post('/:id/readmit', requirePermission('REQUEST_USE'), async (req: AuthRe
   }
 });
 
-router.post('/', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   const deptId = req.body?.department_id || req.user!.department_id;
   if (!deptId) return res.status(400).json({ error: '부서를 지정해 주세요.' });
   const data = normalizePatient(req.body);
@@ -1507,7 +1744,7 @@ router.post('/', requirePermission('REQUEST_USE'), async (req: AuthRequest, res)
   }
 });
 
-router.put('/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/:id', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const before = await (prisma as any).patient.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1536,6 +1773,8 @@ router.put('/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, re
         ...(req.body?.infection_strain !== undefined && { infection_strain: patch.infection_strain }),
         ...(req.body?.period_type !== undefined && { period_type: patch.period_type }),
         ...(req.body?.period_phase !== undefined && { period_phase: patch.period_phase }),
+        ...(req.body?.rehab_type !== undefined && { rehab_type: patch.rehab_type }),
+        ...(req.body?.onset_date !== undefined && { onset_date: patch.onset_date }),
         ...(req.body?.diaper_state !== undefined && { diaper_state: patch.diaper_state }),
         ...(req.body?.diaper_price !== undefined && { diaper_price: patch.diaper_price }),
         ...(req.body?.diaper_start_date !== undefined && { diaper_start_date: patch.diaper_start_date }),
@@ -1587,7 +1826,7 @@ router.put('/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, re
   }
 });
 
-router.delete('/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.delete('/:id', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     const patient = await (prisma as any).patient.findUnique({ where: { id: req.params.id } });
     if (!patient) return res.status(404).json({ error: '환자를 찾을 수 없습니다.' });
@@ -1609,7 +1848,7 @@ router.get('/hospitals', requirePermission('REQUEST_USE', 'PURCHASE_MANAGE'), (_
   }
 });
 
-router.post('/hospitals', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/hospitals', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   const name = String(req.body?.name ?? '').trim();
   if (!name) return res.status(400).json({ error: '병원명을 입력해 주세요.' });
   try {
@@ -1660,7 +1899,7 @@ router.get('/incineration-entries', requirePermission('PURCHASE_MANAGE', 'REQUES
   }
 });
 
-router.post('/incineration-entries', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.post('/incineration-entries', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     await ensureIncinerationTables(prisma as any);
     const entryDate = String(req.body?.entry_date ?? '').slice(0, 10);
@@ -1699,7 +1938,7 @@ router.post('/incineration-entries', requirePermission('REQUEST_USE'), async (re
   }
 });
 
-router.put('/incineration-entries/:id', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/incineration-entries/:id', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     await ensureIncinerationTables(prisma as any);
     const id = String(req.params.id);
@@ -1760,7 +1999,7 @@ router.get('/incineration-monthly', requirePermission('PURCHASE_MANAGE', 'REQUES
   }
 });
 
-router.put('/incineration-monthly/:yearMonth', requirePermission('REQUEST_USE'), async (req: AuthRequest, res) => {
+router.put('/incineration-monthly/:yearMonth', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), async (req: AuthRequest, res) => {
   try {
     await ensureIncinerationTables(prisma as any);
     const yearMonth = String(req.params.yearMonth).slice(0, 7);
@@ -1860,11 +2099,12 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
       }),
       (prisma as any).stockOut.findMany({
         where: { status: { in: ACTIVE_STOCK_OUT_STATUSES as any }, issued_at: { gte: dateFrom, lte: endOf(dateTo) }, ...(departmentId ? { department_id: departmentId } : {}) },
-        include: { items: { include: { item: true } } },
+        // allocations: FIFO 실제 출고원가 (lot 단가 합산 + 음수재고분 fallback 단가)
+        include: { items: { include: { item: true, allocations: true } } },
       }),
       (prisma as any).stockOut.findMany({
         where: { status: { in: ACTIVE_STOCK_OUT_STATUSES as any }, issued_at: { gte: prevDateFrom, lte: endOf(prevDateTo) }, ...(departmentId ? { department_id: departmentId } : {}) },
-        include: { items: { include: { item: true } } },
+        include: { items: { include: { item: true, allocations: true } } },
       }),
     ]);
 
@@ -1965,9 +2205,18 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
         specializations: JSON.parse(p.specializations ?? '[]'),
         period_type: p.period_type,
         diaper_state: p.diaper_state,
+        rehab_type: p.rehab_type ?? '',
+        onset_date: p.onset_date ? p.onset_date.toISOString().slice(0, 10) : null,
       });
       const caregiverTypeKey = normalizeCaregiverType(p.caregiver_type) || 'NONE';
-      row.groups[p.patient_group || 'UNRATED'] = (row.groups[p.patient_group || 'UNRATED'] ?? 0) + 1;
+      // 환자군 카운트: 폐렴/패혈증/다제내성균 → INFECTION 으로 통합
+      const isInfection =
+        p.patient_group === 'PNEUMONIA' ||
+        p.patient_group === 'SEPSIS' ||
+        p.patient_group === 'INFECTION' ||
+        (p.infection_strain && String(p.infection_strain).trim() !== '');
+      const groupKey = isInfection ? 'INFECTION' : (p.patient_group || 'UNRATED');
+      row.groups[groupKey] = (row.groups[groupKey] ?? 0) + 1;
       row.insurance[p.insurance_type || 'HEALTH'] = (row.insurance[p.insurance_type || 'HEALTH'] ?? 0) + 1;
       row.caregiverType[caregiverTypeKey] = (row.caregiverType[caregiverTypeKey] ?? 0) + 1;
       const specs = JSON.parse(p.specializations ?? '[]');
@@ -2001,26 +2250,27 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
       : 0;
 
     const categoryName = (item: any) => {
-      const b = String((item as any)?.stats_bucket ?? '').toUpperCase();
-      if (b === 'MEDICAL') return '의료소모품';
-      if (b === 'GENERAL') return '일반소모품';
-      if (b === 'OFFICE') return '사무용품';
-      if (b === 'DIAPER_CARE') return '기저귀케어';
-      if (b === 'FOOD') return '식음료';
-      return '기타';
+      const c = String((item as any)?.category ?? '').toUpperCase();
+      if (c.startsWith('EQUIP_')) return '비품';
+      if (c.startsWith('OFF_')) return '사무용품';
+      if (c.startsWith('MED_') || c.startsWith('INFECT_')) return '의료소모품';
+      return '일반소모품';
     };
     const sumConsumable = (rows: any[]) => {
       const out: Record<string, number> = {
         '의료소모품': 0,
         '일반소모품': 0,
         '사무용품': 0,
-        '기저귀케어': 0,
-        '식음료': 0,
+        '비품': 0,
       };
       for (const so of rows) {
         for (const it of so.items ?? []) {
           const key = categoryName(it.item);
-          const amount = Number(it.issued_qty) * Number((it as any).unit_price ?? it.item?.latest_price ?? 0);
+          // FIFO 실제 출고원가 = 해당 라인의 lot 할당 line_amount 합계 (issue 단위 원가).
+          // 음수재고 미할당분(inventory_lot_id=null)도 fallback 단가로 line_amount 채워져 있음.
+          const amount = (it.allocations ?? []).reduce(
+            (s: number, a: any) => s + Number(a.line_amount ?? 0), 0,
+          );
           if (out[key] !== undefined) out[key] += amount;
         }
       }
@@ -2167,7 +2417,15 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
           return acc;
         }, {}),
         patient_group: activePatients.reduce((acc: any, p: any) => {
-          acc[p.patient_group || 'UNRATED'] = (acc[p.patient_group || 'UNRATED'] ?? 0) + 1;
+          // 폐렴 / 패혈증 / 다제내성균(infection_strain) 보유자는 모두 'INFECTION'으로 통합 카운트
+          // 우선순위: 감염 우선 → 한 환자가 폐렴+CRE 등 중복돼도 단일 카운트, 합계 414 유지
+          const isInfection =
+            p.patient_group === 'PNEUMONIA' ||
+            p.patient_group === 'SEPSIS' ||
+            p.patient_group === 'INFECTION' ||
+            (p.infection_strain && String(p.infection_strain).trim() !== '');
+          const key = isInfection ? 'INFECTION' : (p.patient_group || 'UNRATED');
+          acc[key] = (acc[key] ?? 0) + 1;
           return acc;
         }, {}),
         caregiver_type: activePatients.reduce((acc: any, p: any) => {
@@ -2190,6 +2448,51 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
           PNEUMONIA: activePatients.filter((p: any) => p.period_type === 'PNEUMONIA').length,
           SEPSIS: activePatients.filter((p: any) => p.period_type === 'SEPSIS').length,
         },
+        rehab_type: activePatients.reduce((acc: any, p: any) => {
+          const key = (p.rehab_type ?? '').trim() || 'NONE';
+          acc[key] = (acc[key] ?? 0) + 1;
+          return acc;
+        }, {}),
+        onset_bucket: (() => {
+          // CNS / OS 환자 중 발병일 입력된 환자의 경과 기간 분포
+          const refDate = new Date();
+          const buckets: Record<string, number> = { lt6m: 0, '6m_1y6m': 0, '1y6m_2y': 0, '2y_5y': 0, '5y_7y': 0, gt7y: 0, none: 0 };
+          for (const p of activePatients) {
+            const rt = (p.rehab_type ?? '').trim();
+            if (rt !== 'CNS' && rt !== 'OS') continue;
+            if (!p.onset_date) { buckets.none += 1; continue; }
+            const days = Math.floor((refDate.getTime() - new Date(p.onset_date).getTime()) / 86400000);
+            const key = days <= 183 ? 'lt6m'
+              : days <= 547 ? '6m_1y6m'
+              : days <= 730 ? '1y6m_2y'
+              : days <= 1825 ? '2y_5y'
+              : days <= 2557 ? '5y_7y'
+              : 'gt7y';
+            buckets[key] += 1;
+          }
+          return buckets;
+        })(),
+        onset_bucket_by_rehab: (() => {
+          // CNS / OS 별로 onset 분포 분리
+          const refDate = new Date();
+          const make = () => ({ lt6m: 0, '6m_1y6m': 0, '1y6m_2y': 0, '2y_5y': 0, '5y_7y': 0, gt7y: 0, none: 0 });
+          const out: Record<string, ReturnType<typeof make>> = { CNS: make(), OS: make() };
+          for (const p of activePatients) {
+            const rt = (p.rehab_type ?? '').trim();
+            if (rt !== 'CNS' && rt !== 'OS') continue;
+            const target = out[rt];
+            if (!p.onset_date) { target.none += 1; continue; }
+            const days = Math.floor((refDate.getTime() - new Date(p.onset_date).getTime()) / 86400000);
+            const key = days <= 183 ? 'lt6m'
+              : days <= 547 ? '6m_1y6m'
+              : days <= 730 ? '1y6m_2y'
+              : days <= 1825 ? '2y_5y'
+              : days <= 2557 ? '5y_7y'
+              : 'gt7y';
+            target[key as keyof ReturnType<typeof make>] += 1;
+          }
+          return out;
+        })(),
         address: activePatients.reduce((acc: any, p: any) => {
           const key = (p.address ?? '').trim() || '미등록';
           acc[key] = (acc[key] ?? 0) + 1;
@@ -2217,7 +2520,8 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
           }, {});
         })(),
       },
-      // 급여/비급여 집계
+      // 급여/비급여 집계 — 월별 breakdown 포함.
+      // 기간 전체 합계 + 월별 by_month 모두 제공.
       charges: await (async () => {
         try {
           const monthFrom = dateFrom.toISOString().slice(0, 7);
@@ -2225,16 +2529,29 @@ router.get('/stats', requirePermission('PURCHASE_MANAGE', 'REQUEST_USE'), async 
           const allCharges: any[] = await (prisma as any).patientCharge.findMany({
             where: { deleted_at: null, charge_month: { gte: monthFrom, lte: monthTo }, ...(departmentId ? { patient: { department_id: departmentId } } : {}) },
           });
-          const covered: Record<string, { total: number; count: number }> = {};
-          const nonCovered: Record<string, { total: number; count: number }> = {};
+          type ItemBucket = { total: number; count: number; by_month: Record<string, number> };
+          const covered: Record<string, ItemBucket> = {};
+          const nonCovered: Record<string, ItemBucket> = {};
+          const monthSet = new Set<string>();
           for (const c of allCharges) {
             const bucket = c.category === 'COVERED' ? covered : nonCovered;
-            if (!bucket[c.item_name]) bucket[c.item_name] = { total: 0, count: 0 };
-            bucket[c.item_name].total += Number(c.amount);
+            if (!bucket[c.item_name]) bucket[c.item_name] = { total: 0, count: 0, by_month: {} };
+            const amt = Number(c.amount);
+            bucket[c.item_name].total += amt;
             bucket[c.item_name].count += 1;
+            bucket[c.item_name].by_month[c.charge_month] = (bucket[c.item_name].by_month[c.charge_month] ?? 0) + amt;
+            monthSet.add(c.charge_month);
           }
-          return { covered, non_covered: nonCovered };
-        } catch { return { covered: {}, non_covered: {} }; }
+          // 월별 합계 (전체 — 모든 항목 합산)
+          const monthlyTotals: Record<string, { covered: number; non_covered: number }> = {};
+          for (const m of monthSet) monthlyTotals[m] = { covered: 0, non_covered: 0 };
+          for (const c of allCharges) {
+            const key = c.category === 'COVERED' ? 'covered' : 'non_covered';
+            monthlyTotals[c.charge_month][key] += Number(c.amount);
+          }
+          const months = Array.from(monthSet).sort();
+          return { covered, non_covered: nonCovered, months, monthly_totals: monthlyTotals };
+        } catch { return { covered: {}, non_covered: {}, months: [], monthly_totals: {} }; }
       })(),
       departments: Array.from(byDept.values()),
     });
@@ -2402,15 +2719,23 @@ router.get('/analytics/consumables', requirePermission('PURCHASE_MANAGE', 'REQUE
     }, {} as any);
 
     const mapCategory = (it: any) => {
-      const b = String(it?.item?.stats_bucket ?? '').toUpperCase();
-      if (b === 'MEDICAL') return '의료소모품';
-      if (b === 'GENERAL') return '일반소모품';
-      if (b === 'OFFICE') return '사무용품';
-      if (b === 'DIAPER_CARE') return '기저귀케어';
-      if (b === 'FOOD') return '식음료';
-      return '기타';
+      const c = String(it?.item?.category ?? '').toUpperCase();
+      if (c.startsWith('EQUIP_')) return '비품';
+      if (c.startsWith('OFF_')) return '사무용품';
+      if (c.startsWith('MED_') || c.startsWith('INFECT_')) return '의료소모품';
+      return '일반소모품';
     };
     const mapDetailCategory = (c: string) => {
+      // 신규 3단 계층
+      if (c.startsWith('MED_')) return '의료소모품';
+      if (c === 'PAT_DIAPER') return '기저귀';
+      if (c.startsWith('PAT_')) return '환자용품';
+      if (c.startsWith('STAFF_')) return '직원 생활용품';
+      if (c.startsWith('INFECT_')) return '감염 보호구';
+      if (c.startsWith('FAC_')) return '시설관리';
+      if (c.startsWith('OFF_')) return '사무용품';
+      if (c.startsWith('FOOD_')) return '식음료';
+      // 레거시
       if (c === 'GENERAL_PATIENT') return '환자용품';
       if (c === 'GENERAL_MGMT') return '병원관리';
       if (c === 'GENERAL_STAFF') return '직원용품';
@@ -2428,8 +2753,7 @@ router.get('/analytics/consumables', requirePermission('PURCHASE_MANAGE', 'REQUE
         '의료소모품': { qty: 0, amount: 0 },
         '일반소모품': { qty: 0, amount: 0 },
         '사무용품': { qty: 0, amount: 0 },
-        '기저귀케어': { qty: 0, amount: 0 },
-        '식음료': { qty: 0, amount: 0 },
+        '비품': { qty: 0, amount: 0 },
       };
       const group = {
         PATIENT_DIRECT: { qty: 0, amount: 0 },
@@ -2643,7 +2967,7 @@ const cleanHdr = (cell: any) => String(cell ?? '').trim().replace(/[★*✓✗]/
 const isImportHeaderRow = (row: any[]) =>
   row.filter(cell => IMPORT_HEADER_MAP[cleanHdr(cell)]).length >= 2;
 
-router.get('/import/template', requirePermission('REQUEST_USE'), (_req, res) => {
+router.get('/import/template', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), (_req, res) => {
   const wb = XLSX.utils.book_new();
   const headers = [[
     '차트번호', '이름', '성별', '거동상태',
@@ -2669,7 +2993,7 @@ router.get('/import/template', requirePermission('REQUEST_USE'), (_req, res) => 
   res.send(buf);
 });
 
-router.post('/import/preview', requirePermission('REQUEST_USE'), upload.single('file'), async (req: AuthRequest, res) => {
+router.post('/import/preview', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), upload.single('file'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
   try {
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -2707,7 +3031,7 @@ router.post('/import/preview', requirePermission('REQUEST_USE'), upload.single('
   }
 });
 
-router.post('/import', requirePermission('REQUEST_USE'), upload.single('file'), async (req: AuthRequest, res) => {
+router.post('/import', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), upload.single('file'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
   const deptId = req.user!.department_id;
   if (!deptId) return res.status(400).json({ error: '부서 정보가 없습니다.' });
@@ -2719,6 +3043,35 @@ router.post('/import', requirePermission('REQUEST_USE'), upload.single('file'), 
     console.error(e);
     res.status(500).json({ error: '파일 처리 오류' });
   }
+});
+
+const uploadFields = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
+
+router.post('/sync-excel', requirePermission('REQUEST_USE', 'PATIENT_MANAGE'), uploadFields.fields([{ name: 'files', maxCount: 3 }]), async (req: AuthRequest, res) => {
+  const files = (req.files as Record<string, Express.Multer.File[]>)?.['files'];
+  if (!files || files.length === 0) return res.status(400).json({ error: '파일이 없습니다.' });
+
+  const results: any = { errors: [] };
+
+  for (const file of files) {
+    try {
+      const fileType = await detectFileType(file.buffer);
+      if (fileType === 'wonmu') {
+        results.wonmu = await processWonmuFile(file.buffer, req.user!.id);
+      } else if (fileType === 'dailyBoard') {
+        results.board = await processDailyBoardFile(file.buffer);
+      } else if (fileType === 'rehab') {
+        results.rehab = await processRehabFile(file.buffer);
+      } else {
+        results.errors.push(`${file.originalname}: 파일 형식을 인식할 수 없습니다.`);
+      }
+    } catch (e: any) {
+      console.error(`sync-excel error [${file.originalname}]:`, e);
+      results.errors.push(`${file.originalname}: ${e.message}`);
+    }
+  }
+
+  res.json(results);
 });
 
 export default router;

@@ -13,8 +13,9 @@ function fmt(n: number) { return n.toLocaleString('ko-KR'); }
 const COLORS = ['#0d9488', '#0891b2', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#10b981'];
 
 const TYPE_LABELS: Record<string, string> = {
-  CONSUMABLE_REGULAR: '정기 소모품', DIAPER: '기저귀', NIGHT_SNACK: '야식',
-  ADHOC: '수시', EQUIPMENT: '장비', CONSUMABLE: '소모품(구)', UNKNOWN: '기타',
+  CONSUMABLE_MEDICAL: '의료소모품', CONSUMABLE_REGULAR: '일반소모품', CONSUMABLE_OFFICE: '사무용품',
+  DIAPER: '기저귀', NIGHT_SNACK: '야간간식',
+  ADHOC: '비정기', EQUIPMENT: '비품', CONSUMABLE: '소모품(구)', UNKNOWN: '기타',
 };
 
 const TABS = [

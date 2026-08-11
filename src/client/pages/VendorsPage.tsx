@@ -35,7 +35,7 @@ export default function VendorsPage() {
   };
 
   const save = async () => {
-    if (!form.code || !form.name) { showMsg('err', '코드와 업체명을 입력해주세요.'); return; }
+    if (!form.name) { showMsg('err', '업체명을 입력해주세요.'); return; }
     setSubmitting(true);
     try {
       if (editing) {
@@ -115,8 +115,8 @@ export default function VendorsPage() {
         }
       >
         <div className="space-y-4">
-          <FormField label="업체 코드" required>
-            <input type="text" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} className="input" placeholder="예: V001" />
+          <FormField label="업체 코드">
+            <input type="text" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} className="input" placeholder={editing ? '' : '비우면 자동 생성 (V-####)'} />
           </FormField>
           <FormField label="업체명" required>
             <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="input" />

@@ -10,6 +10,18 @@ echo.
 
 cd /d "%~dp0"
 
+echo [1/2] 최신 코드로 빌드하는 중... (몇십 초 걸릴 수 있습니다)
+call npm run build
+if errorlevel 1 (
+  echo.
+  echo [오류] 빌드에 실패했습니다. 위 오류 메시지를 확인하세요.
+  pause
+  exit /b 1
+)
+
+echo.
+echo [2/2] 서버를 시작합니다...
+echo.
 echo [접속 주소] 같은 네트워크에서 아래 주소로 접속하세요:
 echo.
 ipconfig | findstr "IPv4"

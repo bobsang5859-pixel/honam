@@ -1,6 +1,8 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { api } from './utils/api';
+import { setUserMidCategories } from '@shared/types';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import { canAccessMenu } from './utils/menuAccess';
@@ -10,32 +12,35 @@ const DashboardPage      = lazy(() => import('./pages/DashboardPage'));
 const WardRequestPage    = lazy(() => import('./pages/WardRequestPage'));
 const ApprovalPage       = lazy(() => import('./pages/ApprovalPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage'));
+const PurchaseDecisionsPage = lazy(() => import('./pages/PurchaseDecisionsPage'));
+const OrderRoutingPage   = lazy(() => import('./pages/OrderRoutingPage'));
+const PurchaseHubPage    = lazy(() => import('./pages/PurchaseHubPage'));
 const ReceiptsPage       = lazy(() => import('./pages/ReceiptsPage'));
 const StockOutPage       = lazy(() => import('./pages/StockOutPage'));
 const ReceiptCheckPage   = lazy(() => import('./pages/ReceiptCheckPage'));
 const InventoryPage      = lazy(() => import('./pages/InventoryPage'));
+const DeptInventoryPage  = lazy(() => import('./pages/DeptInventoryPage'));
 const AuditLogPage       = lazy(() => import('./pages/AuditLogPage'));
 const UsersPage          = lazy(() => import('./pages/UsersPage'));
 const VendorsPage           = lazy(() => import('./pages/VendorsPage'));
 const ItemsPage             = lazy(() => import('./pages/ItemsPage'));
+const RecategorizePage      = lazy(() => import('./pages/RecategorizePage'));
 const BaselinesPage         = lazy(() => import('./pages/BaselinesPage'));
 const ItemCategoriesPage    = lazy(() => import('./pages/ItemCategoriesPage'));
-const StatsCategoriesPage   = lazy(() => import('./pages/StatsCategoriesPage'));
 const ExpenseScopesPage     = lazy(() => import('./pages/ExpenseScopesPage'));
 const PatientStatsPage   = lazy(() => import('./pages/PatientStatsPage'));
-const ComplaintsPage     = lazy(() => import('./pages/ComplaintsPage'));
 const PatientManagePage  = lazy(() => import('./pages/PatientManagePage'));
-const PatientChargesPage = lazy(() => import('./pages/PatientChargesPage'));
-const ReferralIntakePage = lazy(() => import('./pages/ReferralIntakePage'));
 const DeptCategoryPage      = lazy(() => import('./pages/DeptCategoryPage'));
 const EquipmentRequestPage  = lazy(() => import('./pages/EquipmentRequestPage'));
 const MyEquipmentPage       = lazy(() => import('./pages/MyEquipmentPage'));
 const SystemPage            = lazy(() => import('./pages/SystemPage'));
-const UsagePage             = lazy(() => import('./pages/UsagePage'));
+const DocTemplatesPage      = lazy(() => import('./pages/DocTemplatesPage'));
 const LoansPage             = lazy(() => import('./pages/LoansPage'));
 const RequestSchedulesPage  = lazy(() => import('./pages/RequestSchedulesPage'));
 const TreatmentTypesPage   = lazy(() => import('./pages/TreatmentTypesPage'));
 const StatsDashboardPage   = lazy(() => import('./pages/StatsDashboardPage'));
+const CostAnalysisPage     = lazy(() => import('./pages/CostAnalysisPage'));
+const CostReconcilePage    = lazy(() => import('./pages/CostReconcilePage'));
 const IncinerationPage     = lazy(() => import('./pages/IncinerationPage'));
 
 function Loading() {
@@ -74,6 +79,16 @@ function ProtectedRoute({
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  // 로그인 후 사용자 추가 중분류를 1회 적재 — 분류 라벨/그룹 도출(getMidCategory 등)이 참조
+  useEffect(() => {
+    if (!user) return;
+    api('/item-categories')
+      .then((rows: any[]) => setUserMidCategories(
+        (Array.isArray(rows) ? rows : [])
+          .filter(r => r.is_active !== false && r.is_active !== 0)
+          .map(r => ({ code: String(r.code), name: String(r.name) }))))
+      .catch(() => {});
+  }, [user]);
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-100">
@@ -142,10 +157,13 @@ function AppRoutes() {
           path="purchase-orders"
           element={
             <ProtectedRoute perm="PURCHASE_MANAGE" menuKey="purchase-orders">
-              <Suspense fallback={<Loading />}><PurchaseOrdersPage /></Suspense>
+              <Suspense fallback={<Loading />}><PurchaseHubPage /></Suspense>
             </ProtectedRoute>
           }
         />
+        {/* 구 메뉴 딥링크 호환 — 통합된 발주 허브의 해당 탭으로 리다이렉트 */}
+        <Route path="order-routing" element={<Navigate to="/purchase-orders?tab=routing" replace />} />
+        <Route path="purchase-decisions" element={<Navigate to="/purchase-orders?tab=docs" replace />} />
         <Route
           path="receipts"
           element={
@@ -187,6 +205,22 @@ function AppRoutes() {
           }
         />
         <Route
+          path="cost-analysis"
+          element={
+            <ProtectedRoute perm="PURCHASE_MANAGE" menuKey="cost-analysis">
+              <Suspense fallback={<Loading />}><CostAnalysisPage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="cost-reconcile"
+          element={
+            <ProtectedRoute anyPerm={['STATS_VIEW_ALL', 'ACCOUNTING_CLOSE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN']} menuKey="cost-reconcile">
+              <Suspense fallback={<Loading />}><CostReconcilePage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="audit-logs"
           element={
             <ProtectedRoute perm="BASIC_MANAGE" menuKey="audit-logs">
@@ -199,6 +233,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute perm="BASIC_MANAGE" menuKey="items">
               <Suspense fallback={<Loading />}><ItemsPage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="items/recategorize"
+          element={
+            <ProtectedRoute perm="BASIC_MANAGE">
+              <Suspense fallback={<Loading />}><RecategorizePage /></Suspense>
             </ProtectedRoute>
           }
         />
@@ -219,14 +261,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path="stats-categories"
-          element={
-            <ProtectedRoute perm="BASIC_MANAGE" menuKey="stats-categories">
-              <Suspense fallback={<Loading />}><StatsCategoriesPage /></Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="expense-scopes"
           element={
             <ProtectedRoute perm="BASIC_MANAGE" menuKey="expense-scopes">
@@ -243,18 +277,18 @@ function AppRoutes() {
           }
         />
         <Route
-          path="usage"
-          element={
-            <ProtectedRoute perm="REQUEST_USE" menuKey="usage">
-              <Suspense fallback={<Loading />}><UsagePage /></Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="loans"
           element={
             <ProtectedRoute perm="REQUEST_USE" menuKey="loans">
               <Suspense fallback={<Loading />}><LoansPage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="dept-inventory"
+          element={
+            <ProtectedRoute perm="REQUEST_USE" menuKey="dept-inventory">
+              <Suspense fallback={<Loading />}><DeptInventoryPage /></Suspense>
             </ProtectedRoute>
           }
         />
@@ -266,31 +300,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="patient-charges"
-          element={
-            <ProtectedRoute perm="PATIENT_MANAGE" menuKey="patient-charges">
-              <Suspense fallback={<Loading />}><PatientChargesPage /></Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="referral-intake"
-          element={
-            <ProtectedRoute perm="PATIENT_MANAGE" menuKey="referral-intake">
-              <Suspense fallback={<Loading />}><ReferralIntakePage /></Suspense>
-            </ProtectedRoute>
-          }
-        />
         {/* patient-stats는 /stats 내 환자통계 탭으로 통합 */}
-        <Route
-          path="complaints"
-          element={
-            <ProtectedRoute anyPerm={['REQUEST_USE', 'PURCHASE_MANAGE', 'SYSTEM_ADMIN']} menuKey="complaints">
-              <Suspense fallback={<Loading />}><ComplaintsPage /></Suspense>
-            </ProtectedRoute>
-          }
-        />
         <Route
           path="dept-permissions"
           element={
@@ -312,6 +322,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute perm="SYSTEM_ADMIN" menuKey="system">
               <Suspense fallback={<Loading />}><SystemPage /></Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="doc-templates"
+          element={
+            <ProtectedRoute perm="SYSTEM_ADMIN" menuKey="doc-templates">
+              <Suspense fallback={<Loading />}><DocTemplatesPage /></Suspense>
             </ProtectedRoute>
           }
         />

@@ -29,7 +29,6 @@ model Department {
   stock_outs          StockOut[]
   stock_out_followups StockOutFollowUp[]
   inventory_locations InventoryLocation[]
-  cost_statistics     CostStatistic[]
   category_perms      DeptCategoryPermission[]
   item_perms          DeptItemPermission[]
   ward_rooms          WardRoom[]
@@ -81,6 +80,10 @@ model User {
   patient_payments     PatientPayment[] @relation("PatientPaymentCreator")
   referrals_uploaded   Referral[] @relation("ReferralUploader")
   referrals_approved   Referral[] @relation("ReferralApprover")
+  purchase_decisions_created PurchaseDecision[] @relation("PurchaseDecisionCreator")
+  proposal_documents_created ProposalDocument[] @relation("ProposalDocumentCreator")
+  doc_templates_created      DocTemplate[]      @relation("DocTemplateCreator")
+  doc_submissions_generated  DocSubmission[]    @relation("DocSubmissionGenerator")
 
   @@index([department_id])
   @@index([is_active])
@@ -152,8 +155,35 @@ model Vendor {
   purchase_orders PurchaseOrder[]
   pending_receipt_followups PendingReceiptFollowUp[]
   inventory_lots  InventoryLot[]
+  goods_receipts_manual GoodsReceipt[] @relation("GoodsReceiptManualVendor")
+  purchase_decisions PurchaseDecision[]
+  external_records ExternalPurchaseRecord[]
 
   @@map("vendors")
+}
+
+// 외부 거래 이력 — 시스템 도입 전 또는 외부 거래원장/매출내역으로 입수한 거래 기록.
+// 단가/수량 보존이 목적이며 inventory/lot 흐름에는 영향 없음 (별도 통계용).
+model ExternalPurchaseRecord {
+  id               String   @id @default(uuid())
+  item_id          String
+  vendor_id        String
+  source_label     String                   // '예스상사_매출내역' | '기저귀_거래원장' 등
+  transaction_date DateTime
+  qty              Decimal                  // 외부 단위 기준 수량
+  unit_label       String   @default("")    // 외부 단위 표기 (박스/봉지/ea 등)
+  unit_price       Decimal                  // 원 단위
+  amount           Decimal                  // 거래 금액 (보통 qty * unit_price)
+  external_name    String   @default("")    // 외부 표기 품명 (참고용 — 시스템 품명과 다를 수 있음)
+  note             String   @default("")
+  created_at       DateTime @default(now())
+
+  item   Item   @relation(fields: [item_id], references: [id])
+  vendor Vendor @relation(fields: [vendor_id], references: [id])
+
+  @@index([item_id, transaction_date])
+  @@index([vendor_id, transaction_date])
+  @@map("external_purchase_records")
 }
 
 // ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
@@ -163,12 +193,18 @@ model Item {
   id                     String    @id @default(uuid())
   item_code              String    @unique
   name                   String
-  category               String    @default("MEDICAL_FIXED")  // MEDICAL_FIXED | MEDICAL_ACT | GENERAL_PATIENT | GENERAL_STAFF | GENERAL_MGMT | OFFICE_SUPPLY | OFFICE_SEMI | EQUIP_MEDICAL | EQUIP_AID | EQUIP_FURNITURE | EQUIP_APPLIANCE | EQUIP_IT | EQUIP_SAFETY
-  stats_bucket           String    @default("MEDICAL") // MEDICAL | GENERAL | OFFICE | DIAPER_CARE | FOOD
+  category               String    @default("MED_OTHER")  // 중분류 — CATEGORY_HIERARCHY + EQUIPMENT_CATEGORIES 참조 (shared/types.ts). 통계 그룹은 prefix 로 자동 도출 (getStatsGroup)
+  sub_category           String    @default("")             // 소분류 (선택) — 중분류별로 추가 세분화가 필요할 때 사용
   expense_scope          String    @default("PATIENT_DIRECT") // PATIENT_DIRECT | OPS_INDIRECT
-  uom                    String    @default("EA")
-  pack_size              Int       @default(1)
+  uom                    String    @default("EA")              // @deprecated — purchase_uom/issue_uom 사용. 호환성 위해 유지
+  purchase_uom           String    @default("EA")              // 발주 단위 (예: 박스). PO·입고·단가는 이 단위 기준
+  issue_uom              String    @default("EA")              // 불출/재고 단위 (예: 개). 재고·부서신청·불출은 이 단위 기준
+  pack_size              Int       @default(1)                 // 1 purchase_uom = pack_size issue_uom (양의 정수)
   default_vendor_id      String?
+  default_treatment_type_id String?
+  // 병동(부서)에 한해 기저귀 신청 화면에도 노출 + 일반소모품 신청에서는 숨김 (예: 물티슈)
+  // 다른 부서(원무·약제 등)에게는 기존 카테고리대로 일반소모품에서 보임
+  diaper_companion_for_wards Boolean @default(false)
   min_order_qty          Int       @default(1)
   is_regular_order       Boolean   @default(true)
   reorder_days_threshold Int       @default(7)
@@ -177,8 +213,10 @@ model Item {
   image_url              String?
 
   default_vendor        Vendor?              @relation("ItemDefaultVendor", fields: [default_vendor_id], references: [id])
+  default_treatment     TreatmentType?       @relation("ItemDefaultTreatment", fields: [default_treatment_type_id], references: [id])
   vendor_maps           ItemVendorMap[]
   price_history         PriceHistory[]
+  external_records      ExternalPurchaseRecord[]
   ward_request_items    WardRequestItem[]
   approval_action_items ApprovalActionItem[]
   purchase_order_items  PurchaseOrderItem[]
@@ -189,17 +227,36 @@ model Item {
   stock_out_followups      StockOutFollowUp[]
   inventory_lots        InventoryLot[]
   usage_baselines       UsageBaseline[]
-  cost_statistics       CostStatistic[]
   dept_item_permissions DeptItemPermission[]
   equipment_units       EquipmentUnit[]
   treatment_supply_maps TreatmentSupplyMap[]
+  units_per_pack_history ItemUnitsPerPack[]
 
   @@index([category])
-  @@index([stats_bucket])
   @@index([expense_scope])
   @@index([default_vendor_id])
+  @@index([default_treatment_type_id])
   @@index([is_regular_order])
   @@map("items")
+}
+
+// 품목 「팩당 장수」 시점별 이력.
+// 통계(예: 기저귀 사용량)에서 출고 시점에 effective 인 값으로 환산.
+// 같은 item_id 라도 effective_from 이 다른 여러 행 = 시간이 지나며 변경된 값들.
+// 룩업 규칙: 어떤 시점 t 에 적용되는 값 = item_id 의 effective_from <= t 중 가장 최근 행.
+model ItemUnitsPerPack {
+  id              String   @id @default(uuid())
+  item_id         String
+  units_per_pack  Int
+  effective_from  DateTime
+  note            String   @default("")
+  created_by      String?
+  created_at      DateTime @default(now())
+
+  item Item @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@index([item_id, effective_from])
+  @@map("item_units_per_pack_history")
 }
 
 model ItemVendorMap {
@@ -273,12 +330,12 @@ model Patient {
   mobility_type             String    @default("AMBULATORY") // BEDRIDDEN | AMBULATORY
   insurance_type            String    @default("HEALTH") // HEALTH | MEDICAL_1 | MEDICAL_2 | WORKERS_COMP | AUTO_INS
   copay_reduction           String    @default("NONE") // NONE | SEVERE(중증질환) | RARE(희귀난치성)
-  patient_group             String    @default("UNRATED") // HIGHEST | HIGH | MEDIUM | LOW | SELECT | UNRATED
+  patient_group             String    @default("UNRATED") // HIGHEST | HIGH | MEDIUM | LOW | SELECT | UNRATED | PNEUMONIA | SEPSIS (PNEUMONIA/SEPSIS 선택 시 period_type 자동 동기화)
   specializations           String    @default("[]") // JSON string: INFECT | DIALYSIS | REHAB
   infection_strain          String    @default("") // CRE | VRE | MR | ''
   period_type               String    @default("") // PNEUMONIA | SEPSIS | ''
   period_phase              String    @default("") // START | END | ''
-  diaper_state              String    @default("") // CIRCLE | TRIANGLE | ''
+  diaper_state              String    @default("NONE") // IN_HOUSE | PERSONAL | NONE — 빈 문자열 금지 (referral 등 normalize 우회 경로 방어)
   diaper_price              Float?
   diaper_start_date         DateTime?
   diaper_end_date           DateTime?
@@ -309,6 +366,8 @@ model Patient {
   monthly_medical_fee       Float     @default(0)
   monthly_payment           Float     @default(0)
   monthly_unpaid            Float     @default(0)
+  rehab_type                String    @default("") // CNS(뇌신경계 재활) | OS(정형외과·기타 재활) | OUTPATIENT(외래) | '' (해당없음)
+  onset_date                DateTime?            // 발병일 (재활 환자) — onset 경과 기간으로 수가 단계 결정
 
   department            Department         @relation(fields: [department_id], references: [id])
   creator               User               @relation(fields: [created_by], references: [id])
@@ -316,6 +375,7 @@ model Patient {
   events                PatientEvent[]
   patient_disease_codes PatientDiseaseCode[]
   patient_treatments    PatientTreatment[]
+  patient_item_usage    PatientItemUsage[] @relation("PatientItemUsage")
   charges               PatientCharge[]
   payments              PatientPayment[]
   referrals             Referral[]
@@ -323,6 +383,7 @@ model Patient {
   @@index([department_id, status])
   @@index([department_id, room_no, bed_no])
   @@index([admitted_at])
+  @@index([rehab_type])
   @@map("patients")
 }
 
@@ -424,6 +485,8 @@ model WardRoomBoard {
   address                String   @default("")
   referral_source        String   @default("")
   discharge_type         String   @default("")
+  rehab_type             String   @default("") // CNS | OS | OUTPATIENT | ''
+  onset_date             DateTime?            // 발병일 (재활 환자)
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
   deleted_at             DateTime?
@@ -500,6 +563,7 @@ model WardRequest {
   // DRAFT | SUBMITTED | APPROVED | PARTIAL_APPROVED | REJECTED | CANCELLED
   request_type           String    @default("CONSUMABLE_REGULAR")  // CONSUMABLE_REGULAR | DIAPER | NIGHT_SNACK | ADHOC | EQUIPMENT
   is_emergency           Boolean   @default(false)
+  is_test                Boolean   @default(false)  // 테스트 데이터 표시 — 통계 합산 제외, 일괄 삭제 대상
   equipment_request_type String?          // 비품신청 전용: DISPOSAL | ADDITION | REPAIR
   note                   String?          // 비품신청 사유 등
   attachment_urls        String  @default("[]")  // JSON: ["/uploads/equipment-attachments/xxx.jpg", ...]
@@ -507,6 +571,8 @@ model WardRequest {
   source_repair_id       String?                 // 수리불가 폐기 시 원본 EquipmentRepair ID
   submitted_at           DateTime?
   deleted_at             DateTime?
+  // 검토 중 임시저장 — SUBMITTED 상태에서 조정한 승인수량/메모 (JSON). 승인 처리 시 비움.
+  review_draft           String?
 
   department Department @relation(fields: [department_id], references: [id])
   requester  User       @relation(fields: [requester_id], references: [id])
@@ -515,6 +581,7 @@ model WardRequest {
   approval_actions ApprovalAction[]
   stock_outs       StockOut[]
   po_sources       PurchaseOrderSource[]
+  order_routings   OrderRouting[]
 
   @@index([department_id, submitted_at])
   @@index([status])
@@ -530,6 +597,7 @@ model WardRequestItem {
   custom_spec     String  @default("")        // 자유 입력 규격/단위
   custom_link     String  @default("")        // 자유 입력 참고 링크(URL)
   requested_qty   Decimal
+  current_stock_qty Decimal?                  // 신청 시점의 현재 재고 (CONSUMABLE_REGULAR 신청 시 필수)
   baseline_qty    Decimal @default(0)
   diff_pct        Decimal @default(0)
   policy_flags    String  @default("[]")  // JSON array
@@ -575,6 +643,7 @@ model ApprovalActionItem {
   diff_pct           Decimal
   diff_amount        Decimal  @default(0)
   policy_flags       String   @default("[]")  // JSON
+  approver_note      String   @default("")    // 승인자 메모 (품목별)
 
   approval_action ApprovalAction @relation(fields: [approval_action_id], references: [id])
   item            Item?          @relation(fields: [item_id], references: [id])
@@ -599,6 +668,9 @@ model PurchaseOrder {
   pdf_path     String    @default("")
   total_amount Decimal   @default(0)
   note         String    @default("")
+  is_test      Boolean   @default(false)  // 테스트 데이터 (parent 신청이 test이면 자동 전파)
+  // 주차 라벨 수동 지정 (신청 기반 schedule_period_label 보다 우선). 그룹화 이동용.
+  manual_period_label String?
   deleted_at   DateTime?
 
   vendor   Vendor             @relation(fields: [vendor_id], references: [id])
@@ -607,6 +679,7 @@ model PurchaseOrder {
   receipts GoodsReceipt[]
   pending_receipt_followups PendingReceiptFollowUp[]
   sources  PurchaseOrderSource[]
+  from_decision PurchaseDecision? @relation("PurchaseDecisionUsedInPo")
 
   @@index([vendor_id, ordered_at])
   @@index([status])
@@ -636,6 +709,8 @@ model GoodsReceipt {
   id                String    @id @default(uuid())
   gr_no             String    @unique
   purchase_order_id String?
+  // 발주서 미연결(수기 입고) 시 사용자가 직접 지정하는 거래처. 발주서 연결 시에는 purchase_order.vendor_id 사용.
+  manual_vendor_id  String?
   received_by       String
   received_at       DateTime  @default(now())
   status            String    @default("PENDING")  // PENDING | CONFIRMED | DIFF_CONFIRMED | REVERSED
@@ -643,9 +718,14 @@ model GoodsReceipt {
   confirmed_at      DateTime?
   confirmed_by      String?
   diff_count        Int       @default(0)
+  is_test           Boolean   @default(false)  // 테스트 데이터 (parent PO가 test이면 자동 전파)
   deleted_at        DateTime?
+  // 절사·할인 등 GR 단위 조정 금액 (양수 = 차감액). 라인 단위가 아닌 GR 전체 조정 — 품목 마스터 오염 방지.
+  adjustment_amount Decimal   @default(0)
+  adjustment_note   String    @default("")  // 절사 사유 (예: "현금할인", "원단위절사")
 
   purchase_order PurchaseOrder? @relation(fields: [purchase_order_id], references: [id])
+  manual_vendor  Vendor?        @relation("GoodsReceiptManualVendor", fields: [manual_vendor_id], references: [id])
   receiver       User           @relation(fields: [received_by], references: [id])
   confirmer      User?          @relation("GoodsReceiptConfirmer", fields: [confirmed_by], references: [id])
   stock_in_items StockInItem[]
@@ -724,6 +804,12 @@ model StockOut {
   receipt_confirmed_at DateTime?
   receipt_confirmed_by String?
   receipt_diff_count   Int      @default(0)
+  // 수기불출 자동확정 OR 총무구매 「대신 확정」 으로 부서 수령검수 없이 확정된 건 표시
+  confirmed_by_purchaser Boolean @default(false)
+  is_test         Boolean   @default(false)  // 테스트 데이터 (parent ward request 또는 lot이 test이면 자동 전파)
+  // ADHOC 등 ward_request 가 없는 불출을 특정 주차로 그룹화하기 위한 수동 라벨.
+  // null 이면 ward_request 의 라벨 또는 "기간 미지정" 그룹.
+  manual_period_label String?
   deleted_at      DateTime?
 
   department   Department   @relation(fields: [department_id], references: [id])
@@ -746,6 +832,13 @@ model StockOutFollowUp {
   action_type   String   // ISSUE_ADD | COLLECT_BACK
   diff_qty      Decimal
   status        String   @default("OPEN") // OPEN | RESOLVED | CANCELLED
+  // 관리자가 고른 처리방식 (status=RESOLVED 시 기록). null = 아직 미결정.
+  //   ISSUED_EXTRA        : 추가불출 실행 (부족분 추가 출고 — 재고 차감 + 비용 추가)
+  //   NOT_ISSUED_RETURNED : 추가불출 안 함 + 부족분 창고 잔류 → 창고 재고/lot 복원 + 비용 정정
+  //   NOT_ISSUED_LOST     : 추가불출 안 함 + 부족분 분실/파손 → 비용만 정정 (창고 복원 없음)
+  //   COLLECTED           : 회수 실행 (창고 재고/lot 환입 + 원 출고 lot 원가로 비용 차감)
+  //   NOT_COLLECTED       : 회수 안 함 (부서가 그대로 사용 — 변동 없음)
+  disposition   String?
   note          String   @default("")
   created_at    DateTime @default(now())
   created_by    String
@@ -789,12 +882,14 @@ model StockOutItem {
 // ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 //  ?ш퀬 ?꾩튂 + ?꾩옱怨??ㅻ깄??// ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 model InventoryLocation {
-  id            String    @id @default(uuid())
-  code          String    @unique
-  name          String
-  department_id String?
-  is_active     Boolean   @default(true)
-  deleted_at    DateTime?
+  id               String    @id @default(uuid())
+  code             String    @unique
+  name             String
+  department_id    String?
+  is_active        Boolean   @default(true)
+  // 재고자산(Asset) 합산 대상 여부 — true: 자산 통계 포함 (총무구매 창고 등), false: 자산 미인식 (부서 보관함 — 비용은 출고 시점 인식)
+  is_asset_tracked Boolean   @default(true)
+  deleted_at       DateTime?
 
   department      Department?    @relation(fields: [department_id], references: [id])
   inventory       Inventory[]
@@ -832,6 +927,8 @@ model InventoryLot {
   unit_cost       Decimal   @default(0)
   received_qty    Decimal   @default(0)
   remaining_qty   Decimal   @default(0)
+  // 사용자 지정 출고 우선순위 — 0 = 자동(FIFO, received_at 순). 양수 = 명시 우선순위(작을수록 먼저).
+  sort_order      Int       @default(0)
   created_at      DateTime  @default(now())
   deleted_at      DateTime?
 
@@ -895,25 +992,7 @@ model AuditLog {
 // ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 //  ?먭? 吏묎퀎 (materialized ??諛곗튂濡?媛깆떊)
 // ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
-model CostStatistic {
-  id             String   @id @default(uuid())
-  year_month     String   // YYYY-MM
-  department_id  String
-  item_id        String
-  issued_qty     Decimal  @default(0)
-  issued_amount  Decimal  @default(0)
-  avg_unit_price Decimal  @default(0)
-  overuse_count  Int      @default(0)
-  updated_at     DateTime @updatedAt
-
-  department Department @relation(fields: [department_id], references: [id])
-  item       Item       @relation(fields: [item_id], references: [id])
-
-  @@unique([year_month, department_id, item_id])
-  @@index([year_month, department_id])
-  @@index([item_id, year_month])
-  @@map("cost_statistics")
-}
+// (CostStatistic 모델 제거됨 — 월마감/materialize 폐지, 비용은 불출 실제원가 즉석계산으로 통일)
 
 // ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧
 //  遺?쒕퀎 ?덈ぉ 移댄뀒怨좊━ ?좎껌 沅뚰븳
@@ -1005,6 +1084,8 @@ model RequestSchedule {
   open_from    DateTime // ?좎껌 ?쒖옉?쇱떆
   open_to      DateTime // ?좎껌 留덇컧?쇱떆
   period_label String   @default("") // ?? "2026??3??
+  use_from     DateTime?
+  use_to       DateTime?
   note         String   @default("")
   created_by   String
   created_at   DateTime @default(now())
@@ -1038,21 +1119,14 @@ model ItemCategoryMaster {
   code       String   @unique
   name       String
   group      String   @default("CONSUMABLE") // CONSUMABLE | EQUIPMENT
+  // 소속 중분류 코드(CATEGORY_HIERARCHY 의 mid value, 예: MED_DRESSING).
+  // 설정되면 이 행은 그 중분류의 '소분류'. null = 레거시(체계 미연결).
+  mid_code   String?
   sort_order Int      @default(0)
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
+  @@index([mid_code])
   @@map("item_category_masters")
-}
-
-// 통계카테고리 마스터
-model StatsCategoryMaster {
-  id         String   @id @default(uuid())
-  code       String   @unique
-  name       String
-  sort_order Int      @default(0)
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now())
-  @@map("stats_category_masters")
 }
 
 // 비용구분 마스터
@@ -1153,6 +1227,7 @@ model TreatmentType {
 
   supply_maps        TreatmentSupplyMap[]
   patient_treatments PatientTreatment[]
+  item_defaults      Item[]               @relation("ItemDefaultTreatment")
 
   @@map("treatment_types")
 }
@@ -1175,6 +1250,31 @@ model PatientTreatment {
   @@unique([patient_id, treatment_type_id, started_at])
   @@index([patient_id])
   @@map("patient_treatments")
+}
+
+// 환자×품목 사용 매핑 — 호흡·삽관, 카테터·튜브 같이 환자 임상 상태 단위로 추적되는 품목용.
+// 기저귀(Patient.diaper_state)와 처치 등록(PatientTreatment + TreatmentSupplyMap) 의 보완.
+//
+// usage_kind: AIRWAY_INTUBATION / AIRWAY_CANNULA / CATH_FOLEY / CATH_URINBAG / CATH_SUCTION / CATH_CONNECTOR / CATH_LEVIN
+// group_key:  같은 환자 매핑을 공유하는 묶음. 예) FOLEY_GROUP(폴리·유린백), SUCTION_GROUP(석션·커넥터), 그 외는 usage_kind 자체.
+// size:       Item.sub_category 에서 가져온 사이즈/규격 (예: '14Fr', 'Y-Type'). 없으면 빈 문자열.
+model PatientItemUsage {
+  id           String    @id @default(uuid())
+  patient_id   String
+  usage_kind   String
+  size         String    @default("")
+  group_key    String
+  started_at   DateTime  @default(now())
+  ended_at     DateTime?
+  created_by   String
+  note         String    @default("")
+
+  patient Patient @relation("PatientItemUsage", fields: [patient_id], references: [id])
+
+  @@unique([patient_id, usage_kind, size])
+  @@index([usage_kind, size])
+  @@index([group_key, patient_id])
+  @@map("patient_item_usage")
 }
 
 model TreatmentSupplyMap {
@@ -1272,20 +1372,167 @@ model Referral {
   @@map("referrals")
 }
 
-model Complaint {
-  id             String    @id @default(uuid())
-  patient_id     String?
-  department_id  String?
-  complaint_type String    // COMPLAINT | COUNSEL
-  title          String
-  content        String    @default("")
-  status         String    @default("OPEN") // OPEN | IN_PROGRESS | CLOSED
-  resolved_at    DateTime?
-  created_by     String
-  created_at     DateTime  @default(now())
-  deleted_at     DateTime?
+// 구매결의서 — 결재용 서류. 시스템엔 결재 흐름 없이 단순 작성·저장·인쇄만.
+// 한 결의서 = 한 거래처. 발주에 한 번 사용되면 잠금 (used_in_po_id).
+model PurchaseDecision {
+  id              String    @id @default(uuid())
+  decision_no     String    @unique                        // PD-202605-00001
+  title           String    @default("")                   // 사용자 정의 제목
+  vendor_id       String                                   // 거래처
+  doc_date        DateTime  @default(now())                // 작성 일자
+  period_label    String    @default("")                   // "5월 1주" 등
+  period_from     DateTime?                                // 물품 사용 시작
+  period_to       DateTime?                                // 물품 사용 종료
+  dept_label      String    @default("")                   // 청구부서 라벨 ("의료부" 등)
+  approver_lines  String    @default("[]")                 // JSON: ["담당","부서장","행정원장","상임이사","이사장"]
+  comment         String    @default("")                   // 비고
+  items_json      String    @default("[]")                 // 본문 라인 스냅샷 (JSON 배열) — {item_id?, name, spec, qty, unit_price, dept_breakdown?}
+  excluded_items_json String @default("[]")                 // X 로 뺀 라인 — {item_id, name, source_wr_ids, removed_at, reason}. from-approved 의 used_pairs 계산에 포함 → 다음 신규작성 시 또 등장 X
+  source_po_ids   String    @default("[]")                 // JSON: 결의서 작성 시 모은 PO ID 들 (참고용)
+  source_ward_request_ids String @default("[]")            // JSON: 결의서가 묶은 ward_request ID 들 (자동 prefill 시 중복 방지)
+  used_in_po_id   String?   @unique                        // 발주에 사용되면 그 PO ID. null = 미사용 (재사용 가능)
+  status          String    @default("DRAFT")              // DRAFT | LOCKED (LOCKED = 발주에 사용됨)
+  created_by      String
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  deleted_at      DateTime?
 
-  @@index([department_id, created_at])
-  @@index([complaint_type, status])
-  @@map("complaints")
+  vendor      Vendor         @relation(fields: [vendor_id], references: [id])
+  creator     User           @relation("PurchaseDecisionCreator", fields: [created_by], references: [id])
+  used_in_po  PurchaseOrder? @relation("PurchaseDecisionUsedInPo", fields: [used_in_po_id], references: [id])
+
+  @@index([vendor_id])
+  @@index([created_at])
+  @@map("purchase_decisions")
 }
+
+// 기안서 — 결재용 상위 서류. 작성된 구매결의서 1개 이상 묶어서 만듦.
+model ProposalDocument {
+  id              String    @id @default(uuid())
+  document_no     String    @unique                        // PR-202605-00001
+  title           String    @default("")
+  doc_date        DateTime  @default(now())
+  reason          String    @default("")                   // 기안 사유 / 본문
+  approver_lines  String    @default("[]")                 // JSON: 결재 라인 라벨
+  decision_ids    String    @default("[]")                 // JSON: PurchaseDecision.id 배열
+  comment         String    @default("")
+  created_by      String
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  deleted_at      DateTime?
+
+  creator User @relation("ProposalDocumentCreator", fields: [created_by], references: [id])
+
+  @@index([created_at])
+  @@map("proposal_documents")
+}
+
+// ── 문서자동화 엔진(회사양식 업로드→필드매핑→생성) ──────────────────
+// 회사양식 파일(엑셀/HWPX)을 등록하고, 필드 매핑·조건 규칙을 관리자 화면에서
+// 코드 수정 없이 설정할 수 있도록 하는 범용 템플릿 레지스트리.
+model DocTemplate {
+  id                String    @id @default(uuid())
+  name              String                                   // 관리용 표시명 ("구매결의서 기본양식")
+  doc_type          String                                   // 소비자 매핑 키: "PURCHASE_DECISION" | "GIAN" 등
+  format            String                                   // "EXCEL" | "HWPX"
+  description       String    @default("")
+  master_file_path  String                                   // 원본 양식 파일 경로
+  field_schema_json String    @default("[]")                 // FieldDef[] — key/label/type/source(DB_BOUND|MANUAL)/bind_path?
+  section_keys_json String    @default("[]")                 // [SECTION:키] 마커 목록(HWPX)
+  table_binding_json String   @default("{}")                 // 반복 표 바인딩 정의(테이블 키 → 컬럼 매핑)
+  default_visible_sections_json String @default("[]")        // 규칙 없을 때 기본 노출 섹션
+  version           Int       @default(1)
+  is_active         Boolean   @default(true)
+  created_by        String
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+  deleted_at        DateTime?
+
+  creator     User              @relation("DocTemplateCreator", fields: [created_by], references: [id])
+  rules       DocTemplateRule[]
+  submissions DocSubmission[]
+
+  @@index([doc_type])
+  @@map("doc_templates")
+}
+
+// 조건(규칙) 정의 — IF condition THEN action. 코드 수정 없이 관리 화면에서 CRUD.
+model DocTemplateRule {
+  id                  String    @id @default(uuid())
+  template_id         String
+  name                String    @default("")
+  priority            Int       @default(0)                  // 낮은 값 먼저 평가
+  condition_json      String    @default("{}")                // Condition JSON(all/any/not/field-op-value)
+  action_type         String                                  // SHOW_FIELD|HIDE_FIELD|SHOW_SECTION|HIDE_SECTION|ADD_TABLE_ROWS
+  action_payload_json String    @default("{}")
+  is_active           Boolean   @default(true)
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+  deleted_at          DateTime?
+
+  template DocTemplate @relation(fields: [template_id], references: [id])
+
+  @@index([template_id])
+  @@map("doc_template_rules")
+}
+
+// 생성 이력 — 모든 양식 공통 단일 테이블(새 양식 추가 시 SQL 테이블 신설 불필요).
+model DocSubmission {
+  id               String    @id @default(uuid())
+  template_id      String
+  source_type      String    @default("")                    // 예: "PURCHASE_DECISION" (DB 연동 시)
+  source_id        String    @default("")                    // 예: purchase_decisions.id
+  seq_no           String    @default("")                    // 채번 필요한 양식용 (예: "호남-26-004")
+  input_json       String    @default("{}")                  // 생성 시점 입력 데이터 스냅샷
+  render_plan_json String    @default("{}")                  // 해석된 RenderPlan 스냅샷
+  output_file_path String    @default("")
+  status           String    @default("SUCCESS")              // SUCCESS|FAILED
+  error_message     String   @default("")
+  generated_by     String
+  generated_at     DateTime  @default(now())
+
+  template  DocTemplate @relation(fields: [template_id], references: [id])
+  generator User        @relation("DocSubmissionGenerator", fields: [generated_by], references: [id])
+
+  @@index([template_id])
+  @@index([source_type, source_id])
+  @@map("doc_submissions")
+}
+
+// 문서번호 자동 채번용 시퀀스 카운터 (예: scope_key="GIAN-2026").
+model DocSequenceCounter {
+  scope_key  String   @id
+  next_value Int      @default(1)
+  updated_at DateTime @updatedAt
+
+  @@map("doc_sequence_counters")
+}
+
+// 발주 라우팅 — 승인된 (신청×품목) 수요 단위마다 "어느 경로로 보냈는지" 명시 추적.
+// 기존 getProcessedWrItemPairs (source_ward_request_ids × items_json × excluded_items_json
+// JSON 블롭 스캔 + `wr_id::item_id` 문자열쌍) 를 대체하는 단일 진실원.
+// 대기풀 = 승인된 (wr×item) 중 이 테이블에 status=ACTIVE 행이 없는 것.
+model OrderRouting {
+  id              String   @id @default(uuid())
+  ward_request_id String                                  // 어느 신청에서 나온 승인분인지
+  item_id         String?                                 // null = 자유입력 품목
+  custom_key      String   @default("")                   // 자유입력 식별 (custom_name 기반)
+  route           String                                  // DECISION(구매결의서) | GIAN(기안서) | HOLD(재고보유=발주안함)
+  status          String   @default("ACTIVE")             // ACTIVE | RELEASED(보류 해제 → 풀 복귀)
+  approved_qty    Decimal  @default(0)                     // 라우팅 시점 승인 팩수 스냅샷
+  vendor_id       String?                                  // 라우팅 시점 거래처 (DECISION/GIAN)
+  period_label    String   @default("")                   // 신청주기 라벨 스냅샷 (회차 단위 추적·결의서 회차 일치)
+  decision_id     String?                                  // DECISION 시 연결된 PurchaseDecision.id
+  hold_reason     String   @default("")                   // HOLD 사유
+  routed_by       String
+  routed_at       DateTime @default(now())
+  released_at     DateTime?
+
+  ward_request WardRequest @relation(fields: [ward_request_id], references: [id])
+
+  @@index([ward_request_id, item_id])
+  @@index([route, status])
+  @@index([status])
+  @@map("order_routings")
+}
+

@@ -359,6 +359,12 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                       }
                     };
                     const colors = allChecked ? 'border-blue-300 bg-blue-50/50' : someChecked ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white';
+                    const toggleStyle = allChecked
+                      ? 'bg-blue-500 text-white border-blue-500'
+                      : someChecked
+                        ? 'bg-amber-100 text-amber-700 border-amber-300'
+                        : 'bg-white text-slate-400 border-gray-200 hover:border-blue-300';
+                    const toggleLabel = allChecked ? 'ON' : someChecked ? `일부 ${checkedCount}/${tabKeys.length}` : 'OFF';
                     return (
                       <div key={tab.key} className={`border rounded-xl p-4 transition-colors ${colors}`}>
                         <div className="flex items-center justify-between mb-3">
@@ -366,8 +372,8 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                             <p className="text-sm font-bold text-slate-700">{tab.label}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">{tab.desc}</p>
                           </div>
-                          <button type="button" onClick={toggleAll} className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-colors ${allChecked ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-slate-400 border-gray-200 hover:border-blue-300'}`}>
-                            {allChecked ? 'ON' : 'OFF'}
+                          <button type="button" onClick={toggleAll} className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-colors ${toggleStyle}`}>
+                            {toggleLabel}
                           </button>
                         </div>
                         <div className="space-y-2">

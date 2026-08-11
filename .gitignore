@@ -18,6 +18,25 @@ generated/
 # 환자 개인정보(PHI) 포함 파일 — 절대 커밋 금지
 전체 병실현황.xlsx
 
+# 코드가 아닌 업로드/사진/샘플데이터 — 저장소에는 소스코드만
+uploads/
+의료소모품 물품사진/
+일반소모품 물품사진/
+병동별_기저귀_사용량_박스단위.xlsx
+품목목록_20260314092033.xlsx
+hospitals.json
+scripts/recode-map-*.csv
+scripts/item-mapping.json
+scripts/manual-mapping.json
+scripts/mapping-table.json
+scripts/transactions-april.json
+tools/import-items-dryrun.csv
+tools/recategorize-dryrun.csv
+구매결의서양식/2026년 기안서.hwpx
+구매결의서양식/기안서 자동화 템플릿.hwpx
+구매결의서양식/업체별 구매 금액.hwpx
+구매결의서양식/구매결의서 양식.pdf
+
 # Python (ai-server)
 __pycache__/
 *.pyc
